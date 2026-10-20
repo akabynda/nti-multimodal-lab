@@ -252,8 +252,6 @@ for pid in order:
         for extra in n.get("additional_spoken_evidence",[]):
             question=(f" {extra['question_context']}" if extra.get("question_context") else "")
             add(f"Следующая реплика · {timecode(extra.get('start_s'))}:{question} «{trim(extra.get('spoken_excerpt'),160)}»","SmallRu")
-        if n.get("protocol_condition"):
-            add(f"Условие блока: {n['protocol_condition']}.","SmallRu")
         add(trim(n.get("interpretation"),370),"SmallRu")
 
 story.append(PageBreak())

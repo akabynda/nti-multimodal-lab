@@ -75,7 +75,6 @@ function showStory(){
    const b=node("button",`${clock(extra.start_s)} → следующая реплика`);b.onclick=()=>seek(extra.start_s);box.append(b);
    box.append(node("p",`${extra.question_context||""} «${extra.spoken_excerpt}»`));
   }
-  if(r.protocol_condition)box.append(node("p",`Условие блока: ${r.protocol_condition}`));
   box.append(node("p",r.interpretation||r.reason||""));
   const check=(D.audio_rechecks||[]).find(c=>c.comparison_id===r.comparison_id);
   if(check){

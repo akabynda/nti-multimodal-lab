@@ -58,6 +58,7 @@ def comparison_plot(output: Path, stories: list[dict], matches: list[dict]):
 
 def run(root: Path = ROOT, workbook: Path | None = None, audio_dir: Path | None = None,
         notes_path: Path | None = None):
+    root = root.resolve()
     private = root / "data/private"
     output = root / "outputs/research"
     output.mkdir(parents=True, exist_ok=True)
@@ -67,7 +68,7 @@ def run(root: Path = ROOT, workbook: Path | None = None, audio_dir: Path | None 
     if audio_dir is None and notes_path is not None and notes_path.exists():
         selected = json.loads(notes_path.read_text(encoding="utf-8"))
         audio_dir = root / selected.get("asr_dir", "outputs/audio")
-    audio_dir = audio_dir or root / "outputs/audio"
+    audio_dir = (audio_dir or root / "outputs/audio").resolve()
     source = json.loads((private / "source_documents.json").read_text(encoding="utf-8"))
     spec = json.loads((private / "catalog_spec.json").read_text(encoding="utf-8"))
     truth_path = private / "reference_truth.json"
@@ -162,7 +163,7 @@ def run(root: Path = ROOT, workbook: Path | None = None, audio_dir: Path | None 
         "content_relation_counts": content_report["relation_counts"],
         "stories_with_contradiction_candidates": content_report["stories_with_contradiction_candidates"],
         "content_comparison_report": "outputs/research/content_comparison_report.json",
-        "comparison_method": "Reference and ASR quotations; protocol conditions retained separately",
+        "comparison_method": "Written reference and transcript quotations with question-and-answer context",
         "hypotheses_status": hypotheses["status"],
     }
     write_json(output / "summary.json", summary)
