@@ -237,7 +237,11 @@ for pid in order:
     if rows:table(["Письменная история","Результат сверки"],rows,[240,255])
     rank={"contradiction_candidate":0,"uncertain":1,"different":2,"consistent":3,"omitted":4}
     chosen=sorted([n for n in notes if n["participant_id"]==pid and n.get("spoken_excerpt")],key=lambda n:(rank.get(n["relation"],9),-float(n.get("confidence",0))))[:3]
+    seen_evidence=set()
     for n in chosen:
+        evidence_key=(n.get("start_s"),n.get("end_s"),n.get("spoken_excerpt"))
+        if evidence_key in seen_evidence:continue
+        seen_evidence.add(evidence_key)
         add(f"{relation.get(n['relation'],n['relation'])} · {timecode(n.get('start_s'))}–{timecode(n.get('end_s'))}","Sub")
         add(f"Эталон: «{trim(n.get('source_excerpt'),230)}»","SmallRu")
         if n.get("question_summary"):
