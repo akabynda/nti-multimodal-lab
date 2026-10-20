@@ -1,0 +1,17 @@
+.venv
+.git
+models
+outputs
+data/private
+*.log
+__pycache__
+.pytest_cache
+dist
+vendor
+tmp
+qa
+*.MTS
+*.bcrx
+*.bcsx
+*.wav
+*.mp4

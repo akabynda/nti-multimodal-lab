@@ -1,0 +1,11 @@
+services:
+  lab:
+    build: .
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - ../:/data:ro
+      - ./outputs:/app/outputs
+      - ./data/private:/app/data/private
+      - ./models:/app/models
+    restart: unless-stopped

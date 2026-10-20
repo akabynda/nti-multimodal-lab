@@ -1,0 +1,16 @@
+{
+  "data_root": "..",
+  "video_directory": "1_30",
+  "biosignal_sample_rate": "read from recording header",
+  "hrv_window_s": 120,
+  "hrv_step_s": 5,
+  "video_analysis_fps": 12.5,
+  "pose_max_fps": 5,
+  "rppg_window_s": 30,
+  "rppg_step_s": 5,
+  "rppg_band_hz": [0.7, 3.5],
+  "asr_model": "turbo",
+  "language": "ru",
+  "classification": "requires independently verified trial labels",
+  "sync_convention": "session_time = offset_s + scale * source_time"
+}

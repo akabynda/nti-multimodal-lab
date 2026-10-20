@@ -1,0 +1,36 @@
+import json
+import numpy as np
+from fastapi.testclient import TestClient
+from nti_lab import app as module
+
+def test_health_and_annotations(tmp_path,monkeypatch):
+    data=tmp_path/"data";(data/"1_30").mkdir(parents=True)
+    (data/"1_30/00001_Test.MTS").touch()
+    monkeypatch.setattr(module,"ROOT",tmp_path)
+    monkeypatch.setattr(module,"DATA",data)
+    monkeypatch.setattr(module,"OUTPUT",tmp_path/"outputs")
+    c=TestClient(module.app)
+    assert c.get("/api/health").json()["sessions"]==1
+    assert c.get("/api/session/00001_Test").status_code==200
+    a={"bio_offset_s":3,"events":[{"start":1,"end":2,"label":"baseline"}]}
+    assert c.put("/api/session/00001_Test/annotation",json=a).status_code==200
+    assert c.get("/api/session/00001_Test").json()["annotation"]["bio_offset_s"]==3
+    a["events"][0]["end"]=.5
+    assert c.put("/api/session/00001_Test/annotation",json=a).status_code==422
+    assert c.get("/api/session/no_such_session").status_code==404
+
+
+def test_signal_outside_recording_has_no_spectrum(tmp_path,monkeypatch):
+    output=tmp_path/"outputs"
+    folder=output/"bio"/"Test";folder.mkdir(parents=True)
+    (output/"media").mkdir()
+    (output/"media"/"00001_Test.mp4").touch()
+    np.savez(folder/"signals.npz",ecg_t_s=np.arange(0,10,.004))
+    monkeypatch.setattr(module,"DATA",tmp_path/"raw")
+    monkeypatch.setattr(module,"OUTPUT",output)
+    module.signal_arrays.cache_clear()
+    client=TestClient(module.app)
+    for t in (-1,10,100):
+        result=client.get(f"/api/session/00001_Test/signal-window?t={t}").json()
+        assert result=={"status":"outside_recording"}
+    module.signal_arrays.cache_clear()

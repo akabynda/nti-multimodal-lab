@@ -1,0 +1,28 @@
+{
+  "asr": {
+    "repository": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "file": "model.bin",
+    "sha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da",
+    "runtime": "faster-whisper 1.2.1 / CTranslate2 4.8.3",
+    "language": "ru",
+    "compute_type": "int8_float16",
+    "beam_size": 5
+  },
+  "speaker_embeddings": {
+    "repository": "csukuangfj/speaker-embedding-models",
+    "file": "wespeaker_en_voxceleb_resnet34.onnx",
+    "sha256": "5ef208a9da1453335308a6b6f4e6dfbd7e183a38b604de0a57664f45d257fe94",
+    "runtime": "sherpa-onnx 1.13.8",
+    "algorithm_id": "wespeaker_cosine_kmeans_v2",
+    "dimensions": 256,
+    "language_domain_note": "English VoxCeleb-trained; Russian diarization accuracy not measured on labelled turns."
+  },
+  "acoustics": {
+    "runtime": "praat-parselmouth 0.4.6",
+    "sample_rate_hz": 16000,
+    "window_s": 5,
+    "step_s": 1,
+    "pitch_range_hz": [60, 500],
+    "formant_ceiling_hz": 5500
+  }
+}

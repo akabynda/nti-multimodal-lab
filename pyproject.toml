@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nti-multimodal-lab"
+version = "0.1.0"
+description = "Reproducible multimodal physiology research workstation"
+requires-python = ">=3.11"
+dependencies = ["numpy", "scipy", "pandas", "fastapi", "uvicorn", "opencv-contrib-python", "mediapipe", "av", "imageio-ffmpeg", "scikit-learn", "soundfile", "faster-whisper", "praat-parselmouth", "sherpa-onnx", "matplotlib", "pyyaml", "openpyxl", "reportlab"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+nti_lab = ["static/*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
