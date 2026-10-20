@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-let D={},list=[],sid="",current=0,signals={},signalAt=-999,lastRefresh=0,generation=0,signalGeneration=0;
+let D={},list=[],sid="",current=0,signals={},signalAt=-999,lastRefresh=0,generation=0,signalGeneration=0,loading=false;
 const video=$("video");
 const labelText={truth:"Правда",lie:"Ложь",baseline:"База",question:"Вопрос",answer:"Ответ",topic:"Тема",unknown:"Неизвестно"};
 const clock=t=>`${Math.floor(t/60).toString().padStart(2,"0")}:${(t%60).toFixed(2).padStart(5,"0")}`;
@@ -17,11 +17,15 @@ async function init(){
 }
 async function load(id){
  const requestGeneration=++generation;
+ loading=true;
+ document.querySelectorAll("button,input,select").forEach(e=>{if(e.id!=="sessions")e.disabled=true});
  video.pause();sid=id;current=0;signals={};signalAt=-999;
  $("status").textContent="Загрузка сессии…";
  const response=await json(`/api/session/${id}`);
  if(requestGeneration!==generation)return;
  D=response;
+ loading=false;
+ document.querySelectorAll("button,input,select").forEach(e=>e.disabled=false);
  $("sessions").value=sid;
  if(D.media_ready){video.src=`/media/${sid}`;video.load()}else{video.removeAttribute("src");video.load()}
  $("time").max=D.video.duration_s||D.audio.duration_s||D.bio.analysis_duration_s||1200;
@@ -173,6 +177,7 @@ function dashboard(){
  node("p","Оценка правдивости: недоступна без проверенной экспериментальной разметки и независимой валидации."));
 }
 function update(t){
+ if(loading)return;
  current=t;$("clock").textContent=clock(t);$("time").value=t;
  $("syncState").textContent=D.annotation?.sync_verified?"Временное совмещение проверено":"Временное совмещение не проверено";
  const idx=(D.audio.segments||[]).findIndex(s=>t>=s.start&&t<s.end);
