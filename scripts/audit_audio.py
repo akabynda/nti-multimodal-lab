@@ -1,10 +1,16 @@
 """Validate all available audio artefacts without rerunning ML inference."""
 import csv
 import json
+import argparse
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-output = root / "outputs/audio"
+parser = argparse.ArgumentParser()
+parser.add_argument("--output", type=Path, default=root / "outputs/audio")
+parser.add_argument("--expected-recordings", type=int)
+parser.add_argument("--asr-only", action="store_true")
+args = parser.parse_args()
+output = args.output
 rows = []
 for path in sorted(output.glob("*.segments.json")):
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -21,8 +27,9 @@ for path in sorted(output.glob("*.segments.json")):
             assert segment["start"] - 0.02 <= word["start"] <= word["end"] <= segment["end"] + 0.02, (path, segment["id"])
     feature_path = output / f"{data['recording_id']}.features.csv"
     features = list(csv.DictReader(feature_path.open(encoding="utf-8"))) if feature_path.exists() else []
-    assert features, f"Acoustic features missing: {path}"
-    assert data.get("diarization"), f"Diarization metadata missing: {path}"
+    if not args.asr_only:
+        assert features, f"Acoustic features missing: {path}"
+        assert data.get("diarization"), f"Diarization metadata missing: {path}"
     assert not any(s.get("speaker_role", "unconfirmed") != "unconfirmed" and
                    s.get("speaker_label_status") != "manual" for s in segments), path
     for row in features:
@@ -39,7 +46,9 @@ for path in sorted(output.glob("*.segments.json")):
         "cluster_balance_check": data.get("diarization", {}).get("cluster_balance_check"),
         "unknown_speaker_utterances": sum(s.get("speaker_id") == "unknown" for s in segments),
     })
-assert len(rows) == 8, f"Expected 8 recordings, found {len(rows)}"
+assert rows, "No ASR recordings found"
+if args.expected_recordings is not None:
+    assert len(rows) == args.expected_recordings, f"Expected {args.expected_recordings} recordings, found {len(rows)}"
 report = {"recordings": rows, "total_duration_s": sum(r["duration_s"] for r in rows),
           "total_utterances": sum(r["utterances"] for r in rows), "status": "timings_and_ranges_verified"}
 (output / "audit.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

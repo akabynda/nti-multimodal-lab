@@ -39,6 +39,7 @@ async function load(id){
  $("status").textContent=`${D.media_ready?"Видео готово":"Видео обрабатывается"} · ${D.audio.segments?.length||0} речевых сегментов · ${D.bio.channels?.length||0} каналов БОС`;
  $("asrInfo").textContent=`${D.audio.model||"ASR обрабатывается"} · автоматическая расшифровка`;
  $("faceCoverage").textContent=`Лицо отслежено: ${fmt((D.video.face_coverage??NaN)*100,1)}% кадров`;
+ $("ppgLegend").hidden=!D.biosignals?.ppg?.available;
  renderTranscript();renderStories();renderEvents();renderRoles();update(0);
 }
 function renderTranscript(){
@@ -60,14 +61,21 @@ function showStory(){
  const match=D.matches.find(x=>x.candidate_story_id===s?.story_id);
  $("match").replaceChildren();
  if(s?.source_url){const a=node("a","Открыть источник");a.href=s.source_url;a.target="_blank";a.rel="noopener";$("match").append(a)}
- if(match)$("match").append(node("p",`Лексическое сходство: ${fmt(match.similarity_score||match.similarity,3)}. Требуется проверка эпизода.`));
- const names={consistent:"Согласуется с эталоном",contradiction_candidate:"Возможное противоречие",different:"Другой пример или деталь",omitted:"Эпизод не рассказан",uncertain:"Неоднозначный ответ"};
+ if(match)$("match").append(node("p",`Лексическое сходство: ${fmt(match.similarity_score||match.similarity,3)}`));
+ const names={consistent:"Согласуется с эталоном",contradiction_candidate:"Расхождение с эталоном",different:"Другой пример или деталь",omitted:"Эпизод не рассказан",uncertain:"Неоднозначный ответ"};
  $("evidence").replaceChildren(...(D.comparisons||[]).filter(x=>x.story_id===s?.story_id).map(r=>{
   const box=node("div","",`finding ${r.relation}`),head=node("strong",names[r.relation]||r.relation);
   box.append(head);
   if(r.start_s!==null){const b=node("button",`${clock(r.start_s)} → слушать с вопросом`);b.onclick=()=>seek(r.context_start_s??r.start_s);box.append(b)}
   box.append(node("p",`Эталон: «${r.source_excerpt||r.source_detail||""}»`));
+  if(r.question_summary)box.append(node("p",`Смысл вопроса: ${r.question_summary}`));
+  else if(r.question_context)box.append(node("p",`Вопрос: «${r.question_context}»`));
   if(r.spoken_excerpt)box.append(node("p",`Расшифровка: «${r.spoken_excerpt}»`));
+  for(const extra of r.additional_spoken_evidence||[]){
+   const b=node("button",`${clock(extra.start_s)} → следующая реплика`);b.onclick=()=>seek(extra.start_s);box.append(b);
+   box.append(node("p",`${extra.question_context||""} «${extra.spoken_excerpt}»`));
+  }
+  if(r.protocol_condition)box.append(node("p",`Условие блока: ${r.protocol_condition}`));
   box.append(node("p",r.interpretation||r.reason||""));
   const check=(D.audio_rechecks||[]).find(c=>c.comparison_id===r.comparison_id);
   if(check){
@@ -75,7 +83,6 @@ function showStory(){
    if(check.quote_change!=="unchanged"&&check.recommended_stable_excerpt)box.append(node("p",`Устойчивый фрагмент повторной расшифровки: «${check.recommended_stable_excerpt}»`));
   }
   if(r.context_excerpt){const details=document.createElement("details");details.append(node("summary","Контекст вопроса и ответа"),node("p",r.context_excerpt));box.append(details)}
-  if(!r.audio_verified)box.append(node("small","Вывод по тексту ASR. Перед подтверждением метки проверьте речь и контекст."));
   return box;
  }));
 }
@@ -132,12 +139,15 @@ function drawSignals(){
  const a=D.annotation||{},off=Number(a.bio_offset_s)||0,scale=Number(a.bio_scale)||1,b=D.biosignals||{};
  const conv=t=>(t||[]).map(x=>x*scale+off);
  const ecg=signals.ecg||b.ecg||{};
- plot("signals",[
+ const traces=[
   {name:"ЭКГ, мВ",color:"#007c78",t:conv(ecg.t_s),y:ecg.mv||ecg.max_mv},
   {name:"rPPG, отн.",color:"#ce6536",t:D.video.times,y:D.video.rppg},
   {name:"RIP, мВ",color:"#74559c",t:conv(b.rip?.t_s),y:b.rip?.respiration_mv},
   {name:"GSR, мкСм",color:"#9d7b2b",t:conv(b.gsr?.t_s),y:b.gsr?.us||b.gsr?.microsiemens}
- ],current,20);
+ ];
+ if(b.ppg?.available)traces.splice(2,0,{name:"ФПГ, отн.",color:"#2565a6",t:conv(b.ppg.t_s),y:b.ppg.filtered});
+ $("signals").dataset.logicalHeight=b.ppg?.available?300:240;
+ plot("signals",traces,current,20);
 }
 function drawSpectrum(){
  const c=$("spectrum"),w=c.clientWidth||400,h=180,dpr=devicePixelRatio||1;c.width=w*dpr;c.height=h*dpr;
@@ -173,8 +183,11 @@ function dashboard(){
  $("metrics").replaceChildren(...metrics.map(([name,val,unit])=>{const div=node("div","","metric");div.append(node("span",name),node("strong",fmt(val)),node("span",unit));return div}));
  $("comparison").replaceChildren(node("p",`LF/HF: ${fmt(hvalid?hrv.lf_hf:null,2)} · Дыхание RIP: ${fmt(inRange?hrv.resp_bpm:null)} /мин`),
  node("p",`Частота дыхательного движения видео: ${fmt(v.respiratory_motion_bpm)} /мин · качество rPPG: ${fmt(v.spectral_concentration,2)}`),
- node("p",`Межмодальное сравнение: ${a.sync_verified?"синхронизация подтверждена пользователем":"ожидает проверки временного смещения"}`),
- node("p","Оценка правдивости: недоступна без проверенной экспериментальной разметки и независимой валидации."));
+ node("p",`Синхронизация: ${a.sync_verified?"проверена":"автоматическая оценка"}`));
+ if(D.biosignals?.ppg?.available){
+  const pw=near(D.ppg_metrics,"center_s",bt)||{},pv=inRange&&pw.ppg_quality==="usable_automatic";
+  $("comparison").prepend(node("p",`Контактный ФПГ: ${fmt(pv?pw.hr_bpm:null)} уд/мин · RMSSD: ${fmt(pv?pw.rmssd_ms:null)} мс`));
+ }
 }
 function update(t){
  if(loading)return;

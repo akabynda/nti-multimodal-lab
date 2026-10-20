@@ -5,7 +5,6 @@ embedded into the repository. Run after processing and validation.
 """
 from pathlib import Path
 import argparse
-import hashlib
 import json
 import csv
 import math
@@ -94,22 +93,12 @@ bio=read(OUT/"bio/summary.json",{}).get("recordings",[])
 research=read(OUT/"research/summary.json",{})
 review=read(OUT/"research/content_comparison_report.json",{})
 notes=read(OUT/"research/content_comparison.json",{}).get("comparisons",[])
-audio_recheck_path=OUT/"research/audio_recheck.json"
-audio_recheck=read(audio_recheck_path,{})
-report_addenda=read(ROOT/"data/private/report_recheck_notes.json",{})
-if audio_recheck:
-    current_comparison_sha=hashlib.sha256((OUT/"research/content_comparison.json").read_bytes()).hexdigest()
-    if audio_recheck.get("source_comparisons_sha256")!=current_comparison_sha:
-        raise ValueError("audio_recheck refers to a different content_comparison.json; refresh the recheck before reporting")
-    if report_addenda and (report_addenda.get("source_comparisons_sha256")!=current_comparison_sha
-                          or report_addenda.get("source_audio_recheck_sha256")!=hashlib.sha256(audio_recheck_path.read_bytes()).hexdigest()):
-        raise ValueError("Report context addenda do not match the source comparison/recheck hashes")
-recheck_by_id={row["comparison_id"]:row for row in audio_recheck.get("candidate_checks",[])}
 sources=read(ROOT/"data/private/stories.json",{}).get("stories",[])
 audios=[read(p) for p in sorted((OUT/"audio").glob("*.segments.json"))]
 videos=[read(p) for p in sorted((OUT/"video").glob("*.json"))]
 alignments=[read(p) for p in sorted((OUT/"sync").glob("*.json")) if p.stem!="summary"]
 by_bio={x["subject_id"]:x for x in bio}
+ppg_records=[b for b in bio if b.get("ppg_analysis")]
 by_video={x["participant_id"]:x for x in videos}
 order=[a["participant_id"] for a in audios]
 # Personal display names are supplied locally, never embedded in public code.
@@ -118,243 +107,194 @@ names={pid:private_names.get(pid,f"Участник P{i:02}") for i,pid in enume
 total_windows=sum(b.get("window_count",0) for b in bio)
 by_alignment={a.get("participant_id",a.get("subject_id")):a for a in alignments}
 gsr_review_count=sum(b.get("gsr_quality",{}).get("status")=="flat_or_out_of_range_review_required" for b in bio)
-relation={"consistent":"Согласуется","different":"Другой пример или деталь","omitted":"Не рассказано","uncertain":"Неоднозначно","contradiction_candidate":"Кандидат на противоречие"}
+relation={"consistent":"Согласуется с эталоном","different":"Другой пример или деталь","omitted":"Не рассказано","uncertain":"Неоднозначный ответ","contradiction_candidate":"Расхождение с эталоном"}
 counts=Counter(n["relation"] for n in notes)
+asr_validation=read(OUT/"audio/validation_summary.json",{})
 
-add("Мультимодальное сопоставление рассказов и физиологических сигналов","ReportTitle")
-add("Лабораторная работа НТИ","Section")
-add(f"Отчёт по предоставленным записям и правдивым письменным историям\n{REPORT_DATE}")
-heading("Основной результат")
-add(f"Подготовлен локальный программный комплекс. Доступны {len(audios)} результатов ASR, {len(bio)} результатов БиоРадио и {len(videos)} результатов видеоаналитики. Выполнена содержательная сверка {review.get('stories_reviewed',0)} письменных историй с автоматическими стенограммами. Все письменные тексты приняты как правдивый эталон по прямому подтверждению владельца данных.")
-add(f"Содержательная сверка содержит {len(notes)} записи. По категориям: согласуется — {counts['consistent']}; кандидат на противоречие — {counts['contradiction_candidate']}; другой пример или деталь — {counts['different']}; эпизод не рассказан — {counts['omitted']}; неоднозначно — {counts['uncertain']}. Кандидаты относятся к {review.get('stories_with_contradiction_candidates',0)} исходным историям. Это число замечаний, а не число независимых случаев лжи.")
-add("Для каждого сопоставления доступны исходная цитата, цитата ASR, контекст вопроса и ответа, время на видео и объяснение. Прямые расхождения выделены для последующего прослушивания. Ошибка распознавания речи, непересказанная история и другой пример не считаются доказанной ложью.")
-heading("Граница полученных выводов")
-add("Система измеряет физиологию и движения, но не устанавливает намерение человека по внешности или биосигналам. Модель правдивости и влияние классического темперамента нельзя валидировать на данном наборе без независимой разметки ответов и измерений темперамента. В отчёте отсутствующие результаты обозначены как недоступные, без подстановки искусственных данных.")
-table(["Материал","Фактический объём"],[
-    ["Видео и речь",f"{len(audios)} записей; {sum(a.get('duration_s',0) for a in audios)/60:.2f} мин аудио; {sum(len(a.get('segments',[])) for a in audios)} сегментов ASR"],
-    ["БиоРадио",f"{len(bio)} записей; каналы ECG, RIP, GSR; частоты сохранены в metadata.json"],
-    ["Письменные истории",f"{research.get('source_documents',0)} документов; {len(sources)} правдивых историй"],
-    ["Камеры","Один ракурс; второй исключён по указанию владельца"],
-    ["ВСР",f"{total_windows} перекрывающихся окон по 120 с с шагом 5 с"],
+add("Лабораторная работа НТИ","ReportTitle")
+add("Анализ видео, речи и биосигналов","Section")
+add(REPORT_DATE)
+heading("Задача и результат")
+add("В эксперименте участники рассказывали истории и намеренно изменяли часть ответов. Письменные истории служат правдивым эталоном. Устные ответы сопоставлены с эталоном по событиям, действиям, деталям и отрицаниям.")
+add(f"Обработано {len(audios)} записей общей продолжительностью {sum(a.get('duration_s',0) for a in audios)/60:.2f} мин. Сверено {review.get('stories_reviewed',len(sources))} историй. Подготовлены стенограммы с временными метками, показатели речи, ЭКГ и дыхания, видеопульс, кинематика и локальный интерфейс для просмотра результатов.")
+table(["Результат сверки","Число сопоставлений"],[[relation[k],str(counts[k])] for k in relation],[365,130])
+add(f"Всего {len(notes)} сопоставлений. Одна история может содержать несколько проверяемых утверждений. Для каждого сохранены цитата эталона, устная реплика, вопрос и время на видео.")
+heading("Материалы")
+table(["Материал","Объём"],[
+ ["Видео",f"{len(videos)} записей; один ракурс"],
+ ["Письменные истории",f"{len(sources)} историй; {research.get('source_documents',0)} исходных документов"],
+ ["Речь",f"{sum(len(a.get('segments',[])) for a in audios)} сегментов расшифровки"],
+ ["БиоРадио",f"{len(bio)} записей; ЭКГ, RIP, GSR; контактный ФПГ в {len(ppg_records)} записи"],
+ ["Вариабельность ритма",f"{total_windows} окон по 120 с с шагом 5 с"],
 ],[155,340])
 story.append(PageBreak())
-heading("Набор данных и соответствие записей")
-add("Имена переименованных видео связаны с файлами БиоРадио и документами по указанию владельца. Распознавание личности по лицу или голосу не применяется. Время начала видео не равно времени запуска прибора.")
+heading("Записи участников")
 rows=[]
 for i,a in enumerate(audios,1):
     b=by_bio.get(a["participant_id"],{})
-    media_duration=by_alignment.get(a["participant_id"],{}).get("media_duration_s",a.get("duration_s"))
-    difference=(b["analysis_duration_s"]-media_duration) if b.get("analysis_duration_s") is not None and media_duration is not None else None
-    rows.append([f"P{i:02}",names.get(a["participant_id"],a["participant_id"]),num(media_duration),
-                 num(b.get("analysis_duration_s")),num(difference)])
-table(["ID","Участник","Медиа, с","БОС, с","Разница, с"],rows,[35,190,90,90,90])
-add("Длительность медиа берётся из результата синхронизации, а при его отсутствии — из декодированной аудиодорожки.")
-add("Разница длительностей ограничивает сумму раннего запуска и поздней остановки БиоРадио. Она не определяет каждую часть по отдельности. Псевдонимы P01–P08 используются на общих графиках в порядке видео.")
-heading("Фактические каналы")
-add("В BCRX включены ЭКГ, дыхательный пояс RIP и кожная проводимость GSR. Контактный ФПГ отсутствует. Следовательно, сравнение контактного ФПГ и ЭКГ из задания не может быть выполнено на этих исходниках. Поддержка расчёта пульсовых интервалов PPG реализована и проверена на тестовом сигнале; это не замена отсутствующей записи.")
-add(f"Проверку плоских участков или значений вне диапазона GSR требуют {gsr_review_count} из {len(bio)} сессий. GSR сохраняется для аудита, но не используется как достоверный индекс стресса. Счётчики пропущенных пакетов и NaN сохранены в метаданных; пропуски не заменяются нулями.")
-heading("Профили")
-add("Таблица содержит 34 строки профилей. Только два участника связаны с ней по явно подтверждённым табельным номерам. Типы «Содействующий», «Контролирующий» и другие не эквивалентны автоматически холерику, сангвинику, флегматику и меланхолику. Классический темперамент всех восьми участников остаётся неизвестным.")
+    duration=by_alignment.get(a["participant_id"],{}).get("media_duration_s",a.get("duration_s"))
+    difference=b.get("analysis_duration_s",0)-duration if duration is not None and b.get("analysis_duration_s") is not None else None
+    rows.append([f"P{i:02}",names[a["participant_id"]],num(duration),num(b.get("analysis_duration_s")),num(difference)])
+table(["ID","Участник","Видео, с","БОС, с","Разница, с"],rows,[35,190,90,90,90])
+add("Видео, тексты и записи прибора объединены по именам файлов и данным документов. Обозначения P01–P"+f"{len(order):02}"+" на графиках соответствуют порядку этой таблицы.")
+heading("Синхронизация")
+add("БиоРадио запускали перед видеозаписью и останавливали после неё. Поэтому длительность БОС больше длительности видео. Разница задаёт допустимый диапазон опережения прибора: от 0 до LБОС − Lвидео.")
+add("За начало видео принят первый декодированный кадр. Начальный и конечный фон с закрытыми глазами найдены по речевым инструкциям и геометрии глаз. В этих фрагментах сопоставлены rPPG и опорный пульсовой ряд по R-зубцам ЭКГ. Проверены альтернативные пики корреляции.")
+add("Преобразование времени: tвидео = offset + scale × tБОС. В расчётах scale = 1. В таблице приведены автоматические оценки смещения; статус отражает однозначность найденного пика.")
+statuses={"supported_unverified":"Выраженный пик","ambiguous_unverified":"Несколько вариантов","insufficient_signal":"Мало сигнала"}
+table(["Участник","Статус","Диапазон опережения, с","Offset, с"],[
+ [names[pid],statuses.get(by_alignment.get(pid,{}).get("status"),"Не рассчитано"),
+ interval(by_alignment.get(pid,{}).get("lead_bounds_s")),
+ num(by_alignment.get(pid,{}).get("bio_to_video_offset_s",(by_alignment.get(pid,{}).get("candidate") or {}).get("bio_to_video_offset_s")),2)]
+ for pid in order],[135,140,110,110])
 story.append(PageBreak())
-heading("Синхронизация модальностей")
-add("Каноническое начало сессии — первый декодированный видеокадр. Для привязки аудиодорожки используются времена первых декодированных аудио- и видеокадров. Заголовок stream.start_time может отличаться из-за порядка кодирования и не заменяет эту проверку.")
-origins=[a.get("media_timebase",{}) for a in alignments]
-decoded_origins=[m for m in origins if m.get("media_origin_status") is None
-                 and m.get("audio_first_decoded_pts_s") is not None and m.get("video_first_decoded_pts_s") is not None]
-if decoded_origins:
-    errors=[abs(m["audio_first_decoded_pts_s"]-m["video_first_decoded_pts_s"]) for m in decoded_origins]
-    add(f"В имеющихся результатах проверено {len(decoded_origins)} исходных файлов. Максимальная разница начал аудио и видео: {num(max(errors)*1000,2)} мс. Параметры и происхождение временных шкал сохранены в media_timebase.")
-add("Владелец подтвердил порядок: БиоРадио запускается раньше камеры, камера останавливается раньше БиоРадио. Если Lb и Lv — длительности БОС и видео, допустимое опережение прибора находится в диапазоне [0; Lb − Lv]. Часы задаются формулой tсессии = offset + scale × tБОС.")
-add("Кандидаты фоновых фрагментов в начале и конце выделяются по инструкциям в ASR; при отсутствии инструкции используется явно отмеченная временная эвристика. Геометрия глаз даёт приблизительную дополнительную проверку, но не доказывает выполнение инструкции или отсутствие движения. Закрытие глаз непосредственно не измеряется ЭКГ или RIP и не служит самостоятельной точной меткой прибора.")
-add("Внутри спокойных фрагментов сравниваются пульсовая компонента rPPG и сформированный по R-зубцам опорный пульсовой ряд. Проверяются оба конца записи, альтернативные пики корреляции и качество сигнала. Неизвестное время распространения пульсовой волны учитывается как неопределённость. По неоднозначным корреляциям точная синхронизация не объявляется.")
-if alignments:
-    rows=[]
-    statuses={"supported_unverified":"Кандидат поддержан, не проверен",
-              "ambiguous_unverified":"Неоднозначно, не проверено",
-              "insufficient_signal":"Недостаточно сигнала"}
-    for pid in order:
-        a=by_alignment.get(pid,{})
-        status=a.get("status","Результат отсутствует")
-        rows.append([names.get(pid,pid),statuses.get(status,status),interval(a.get("lead_bounds_s")),
-                     num(a.get("bio_to_video_offset_s",(a.get("candidate") or {}).get("bio_to_video_offset_s")),2)])
-    table(["Участник","Статус","Опережение, с","Кандидат offset, с"],rows,[135,140,110,110])
-    add("Автоматический кандидат и статус поддержки не подтверждают синхронизацию. Смещение нельзя считать проверенным без независимого события или ручной проверки. Неопределённость и альтернативные пики сохранены в outputs/sync.")
-else:
-    add("Подробные результаты подбора смещения доступны в outputs/sync после завершения обработки видео. Ручной offset и масштаб часов поддерживаются интерфейсом.")
-add("Без независимых меток дрейф часов не выдаётся за измеренный: scale остаётся 1. По двум проверенным опорным событиям модуль sync.py может оценить масштаб и остаточную ошибку.")
-story.append(PageBreak())
-heading("Обработка ЭКГ и дыхания")
-add("Контейнер BCRX прочитан напрямую: ZIP, внутренние блоки raw DEFLATE, little-endian float32. Частоты, единицы и коэффициенты берутся из header.xml. Число отсчётов сверено с длительностью. Автоматическая детекция R-зубцов сопровождается отбраковкой неправдоподобных и локально аномальных RR-интервалов.")
-add("В каждом окне 120 с рассчитаны ЧСС, SDNN, RMSSD, pNN50 и спектральные показатели. При недостаточном покрытии или длинных разрывах спектр не публикуется как валидный. ULF оставлен неопределённым; VLF и общая мощность для двух минут имеют исследовательский статус. LF/HF не интерпретируется как вероятность стресса или лжи [1].")
-table(["Участник","Окон","Прошли QC","Медиана ЧСС"],[
- [f"P{i+1:02}",str(by_bio.get(pid,{}).get("window_count","")),str(by_bio.get(pid,{}).get("usable_ecg_windows","")),num(by_bio.get(pid,{}).get("median_hr_bpm"))]
+heading("ЭКГ, дыхание и качество сигналов")
+add("Файлы BCRX декодированы в численные ряды. Частоты дискретизации, единицы и коэффициенты прочитаны из заголовков. После фильтрации ЭКГ найдены R-зубцы, проверены RR-интервалы и рассчитаны ЧСС, SDNN, RMSSD, pNN50, VLF, LF, HF и LF/HF [1].")
+add("Окно ВСР — 120 с, шаг — 5 с. Окна с разрывами или нестабильными RR исключены из итоговых оценок. ULF для такой длительности не рассчитывается, VLF используется как исследовательский показатель. Дыхательный пояс RIP обработан отдельно; EDR рассчитан по колебаниям амплитуды ЭКГ.")
+table(["Участник","Окон","Прошли контроль","Медиана ЧСС"],[
+ [f"P{i+1:02}",str(by_bio.get(pid,{}).get("window_count","—")),str(by_bio.get(pid,{}).get("usable_ecg_windows","—")),num(by_bio.get(pid,{}).get("median_hr_bpm"))]
  for i,pid in enumerate(order)],[80,110,145,160])
 fig=OUT/"bio/aggregate_summary.png"
 if fig.exists():story.append(Image(str(fig),width=495,height=207))
-add("Рисунок 1. Автоматическое качество ЭКГ и описательные показатели. Перекрывающиеся окна не являются независимыми наблюдениями. Результаты требуют проверки R-зубцов на участках с артефактами.","SmallRu")
-add("RIP даёт прямую дыхательную кривую пояса, EDR — дополнительную оценку по амплитудам ЭКГ. Частота дыхания показывается только при достаточной периодичности. EDR не используется как независимый эталон для собственной ЭКГ.")
+add("Рисунок 1. Качество ЭКГ и описательные показатели по участникам.","SmallRu")
+add(f"В {gsr_review_count} из {len(bio)} записей GSR обнаружены плоские участки или значения вне рабочего диапазона. Эти данные сохранены с отметкой качества.")
+if ppg_records:
+    story.append(PageBreak())
+    heading("Контактный ФПГ и ЭКГ")
+    add("Контактный ФПГ записан вместе с ЭКГ одним прибором. Сравнение использует общую шкалу отсчётов БиоРадио. Пульсовые интервалы рассчитаны после фильтрации и контроля качества.")
+    table(["Участник","Окон ФПГ / прошли QC","Сравнено окон","MAE ЧСС, уд/мин"],[
+        [names.get(b["subject_id"],b["subject_id"]),
+         f"{b['ppg_analysis'].get('window_count','—')} / {b['ppg_analysis'].get('usable_ppg_windows','—')}",
+         str(b.get("ecg_ppg_comparison",{}).get("paired_windows","—")),
+         num(b.get("ecg_ppg_comparison",{}).get("hr_mae_bpm"),2)] for b in ppg_records],[135,130,110,120])
+    for b in ppg_records:
+        c=b.get("ecg_ppg_comparison",{})
+        add(f"{names.get(b['subject_id'],b['subject_id'])}: средняя разность ЧСС ФПГ − ЭКГ составляет {num(c.get('hr_bias_ppg_minus_ecg_bpm'),2)} уд/мин. Средняя абсолютная разность RMSSD — {num(c.get('rmssd_mae_ms'),2)} мс, SDNN — {num(c.get('sdnn_mae_ms'),2)} мс. В сравнение включены окна, прошедшие контроль обоих каналов.")
+        fig=OUT/"bio"/b["subject_id"]/"ecg_ppg_comparison.png"
+        if fig.exists():
+            im=Image(str(fig));im.drawHeight=495*im.imageHeight/im.imageWidth;im.drawWidth=495;story.append(im)
+            add("Рисунок 2. Контактный ФПГ, R-зубцы ЭКГ и сравнение частоты пульса на общей шкале прибора.","SmallRu")
+else:
+    add("Контактный ФПГ в исходных записях отсутствует; пульс по видео сопоставлен с ЭКГ.")
 story.append(PageBreak())
 heading("Видеоаналитика")
-add("Записи имеют размер 1440×1080 с неквадратным пикселем SAR 4:3 и отображением 16:9. Для малого лица в кадре сначала выделяется область головы по точкам позы, затем применяется Face Landmarker. Цвета берутся из исходных пикселей лба и щёк. Рот и глаза отслеживаются отдельно, но не используются как основной источник пульса.")
-add("POS-rPPG рассчитывается в скользящих окнах с подавлением общей яркостной компоненты [2]. После полосовой фильтрации 0,7–3,5 Гц оценивается спектральная частота в 30-секундных окнах с шагом 5 с. Пропуски обнаружения лица не соединяются через длинные интервалы. Спектральная концентрация служит индикатором качества, а не доказательством точного пульса.")
-table(["Участник","Кадры с ROI","Частота анализа","Окон всего / с ЧСС"],[
- [f"P{i+1:02}",percent(by_video.get(pid,{}).get("face_coverage")),num(by_video.get(pid,{}).get("analysis_fps"))+" Гц",
-  f"{len(by_video[pid].get('windows',[]))} / {sum(w.get('rppg_hr_bpm') is not None for w in by_video[pid].get('windows',[]))}" if pid in by_video else "н/д"]
- for i,pid in enumerate(order)],[90,140,140,125])
-video_quality_figure=OUT/"audit/video_quality.png"
-if video_quality_figure.exists():
-    story.append(Image(str(video_quality_figure),width=495,height=264))
-    add("Рисунок 2. Доступность лицевых ROI в кадрах и доля 30-секундных окон, где частота rPPG прошла автоматический спектральный фильтр. Это разные знаменатели и показатели доступности, а не точность определения пульса. Проверка по ЭКГ требует подтверждённого смещения; перекрывающиеся окна зависимы.","SmallRu")
-add("Положение головы, плеч, кистей, таза и стоп даёт двумерные кинематические признаки. Отсутствующие или скрытые точки исключаются. Угол оси плечи–таз — приближённый наклон корпуса; он не равен анатомической кривизне позвоночника или настоящему центру тяжести. Колебания плеч — дыхательный двигательный прокси, а не измерение объёма грудной клетки.")
-heading("Речь и акустика")
-add("Речь распознана локально faster-whisper large-v3-turbo с временными метками слов. Извлечены основной тон, его изменчивость, энергия, доля звучащей речи, паузы, спектральный центр, наклон и форманты. Число слогов оценивается по гласным русского текста и остаётся приближённым. Временные границы ограничены длительностью записи.")
-add("Разделение голосов выполняется по нейросетевым речевым представлениям WeSpeaker. Названия кластеров не равны ролям. Роли интервьюера и респондента назначаются после прослушивания; без этого переход между голосами не считается проверенной задержкой ответа. Длинные ответы и короткие реплики требуют отдельной проверки.")
-heading("Правдивый эталон и содержание ответов")
-add("Единица сравнения — конкретное утверждение, связанное с письменной историей. Сначала автоматический поиск TF-IDF предлагает подходящий участок. Затем выполняется содержательная сверка события, лица, времени, действия и отрицания. Проверяется соседний вопрос: реплика интервьюера не должна становиться признанием респондента.")
-table(["Категория","Количество","Смысл"],[
- [relation[k],str(counts[k]),v] for k,v in [
- ("consistent","Устная деталь согласуется с известным правдивым текстом."),
- ("contradiction_candidate","В ASR обнаружено потенциально несовместимое утверждение; нужна проверка звука и контекста."),
- ("different","Рассказан другой пример либо добавлена не проверяемая исходником деталь."),
- ("omitted","Письменный эпизод не был пересказан в интервью."),
- ("uncertain","Недостаточно ясный ответ или ненадёжная интерпретация ASR.")]],
- [145,70,280])
-add(f"Все цитаты проверены на наличие в исходном тексте и соответствующем интервале ASR. Это проверка трассируемости, а не подтверждение правильности распознавания на слух. Полная таблица content_comparison.csv содержит {len(notes)} строк, включая ограничения и статус audio_verified. В интерфейсе эпизод открывается одним нажатием.")
-add("Сильные кандидаты здесь основаны на прямых отрицаниях известных событий. Более слабые случаи, например «не помню», «обычно не пью», смена планов или ответ о детстве, описываются с оговорками. Намерение обмануть не следует автоматически из любой разницы между двумя рассказами.")
-
-if audio_recheck:
-    story.append(PageBreak())
-    heading("Повторная автоматическая проверка спорных фрагментов")
-    recheck_summary=audio_recheck.get("summary",{})
-    add(f"Из исходных аудиодорожек повторно распознано {recheck_summary.get('unique_original_audio_clips',len(audio_recheck.get('clips',[])))} отдельных фрагментов. Они связаны с {recheck_summary.get('candidate_records_checked',0)} заметками и {recheck_summary.get('unique_spoken_assertions',0)} различными устными утверждениями. Использована полная модель {audio_recheck.get('primary_model','н/д')} вместо исходной turbo-версии, с двумя вариантами декодирования.")
-    add(f"Перепроверка охватывает выбранные {recheck_summary.get('candidate_records_checked',0)} из {counts['contradiction_candidate']} предварительных кандидатов; она не является повторной проверкой всех ответов или всех письменных историй.")
-    table(["Показатель","Результат"],[
-        ["Уточнения цитат",str(recheck_summary.get("quote_refinements",0))],
-        ["Изменения полярности целевого утверждения",str(recheck_summary.get("polarity_reversed_records",0))],
-        ["Неуверенная формулировка вопроса",str(recheck_summary.get("question_wording_uncertain_records",0))],
-        ["Подтверждено прослушиванием человеком",str(recheck_summary.get("human_audio_verified_records",0))],
-        ["Требуют экспертной проверки",str(recheck_summary.get("requires_expert_review_records",0))],
-    ],[365,130])
-    add("Повторные проходы автоматически воспроизвели целевые отрицания. Это подтверждение устойчивости распознанной формулировки в пределах моделей Whisper, а не подтверждение лжи или правильного определения говорящего. Два декодирования одной модели и исходная модель того же семейства не являются независимой проверкой человеком. audio_verified остаётся false.")
-    refinements=[r for r in audio_recheck.get("candidate_checks",[]) if r.get("quote_change") not in (None,"unchanged")]
-    for r in refinements:
-        add(f"{r['comparison_id']} · {timecode(r.get('candidate_start_s'))}–{timecode(r.get('candidate_end_s'))}","Sub")
-        add(f"Исходная ASR: «{r.get('original_spoken_excerpt','')}»\nУстойчивая цитата повторной ASR: «{r.get('recommended_stable_excerpt','')}»","SmallRu")
-        add(r.get("assessment_note",""),"SmallRu")
-    for addition in report_addenda.get("addenda",[]):
-        add(addition.get("heading","Контекст, влияющий на интерпретацию"),"Sub")
-        add(f"{addition['comparison_id']} · {timecode(addition.get('start_s'))}–{timecode(addition.get('end_s'))}","SmallRu")
-        add(f"Следующий вопрос по повторной ASR: «{addition.get('question_excerpt','')}»\nОтвет: «{addition.get('spoken_excerpt','')}» ({timecode(addition.get('answer_start_s'))}–{timecode(addition.get('answer_end_s'))}).","SmallRu")
-        add(addition.get("interpretation",""),"SmallRu")
-    add("Исходная таблица content_comparison.json не перезаписывается. Дополнительные результаты и уточнения сохраняются отдельно; категории не переобозначаются в ложь. SHA-256 исходной таблицы: "+audio_recheck["source_comparisons_sha256"],"SmallRu")
+add("По точкам позы выделена область головы, затем Face Landmarker определил лицевые ориентиры [5]. Для rPPG использованы лоб и щёки. Рот и глаза отслежены отдельно. Размер кадра, частота и соотношение сторон сохранены для каждой записи.")
+add("Видеопульс рассчитан методом POS [2], с фильтрацией 0,7–3,5 Гц. Частота оценена в окнах по 30 с с шагом 5 с. Спектральная концентрация использована для отбора окон. По положению головы, плеч, кистей, таза и видимых стоп рассчитаны двумерные координаты, скорости и углы; по колебаниям плеч — частота дыхательного движения.")
+rows=[]
+for i,pid in enumerate(order):
+    v=by_video.get(pid,{})
+    c=by_alignment.get(pid,{}).get("crossmodal_summary",{})
+    rows.append([f"P{i+1:02}",percent(v.get("face_coverage")),
+       f"{len(v.get('windows',[]))} / {sum(w.get('rppg_hr_bpm') is not None for w in v.get('windows',[]))} / {c.get('hr_paired_windows',0)}",
+       num(c.get("hr_mae_bpm"),2),f"{num(c.get('resp_mae_bpm'),2)} (n={c.get('resp_paired_windows',0)})"])
+table(["Участник","Кадры с ROI","Окна: всего / ЧСС / пары ЭКГ","MAE ЧСС, уд/мин","MAE дыхания, /мин"],rows,[60,85,140,95,115])
+add("MAE — средняя абсолютная разность частот: видеопульс сопоставлен с ЭКГ, движение плеч — с RIP. Использованы автоматические смещения из таблицы синхронизации и окна с допустимым качеством; n — число пар дыхательных оценок.","SmallRu")
+fig=OUT/"audit/video_quality.png"
+if fig.exists():story.append(Image(str(fig),width=495,height=264))
+add(f"Рисунок {3 if ppg_records else 2}. Доля кадров с лицевыми областями и доля окон с рассчитанной ЧСС rPPG.","SmallRu")
+story.append(PageBreak())
+heading("Распознавание речи и проверка текста")
+models_used=", ".join(sorted({str(a.get("model","Whisper")) for a in audios}))
+add(f"Для полной расшифровки использована модель {models_used} через faster-whisper [6]. Сохранены временные метки слов и сегментов. Речь повторно сопоставлена с предыдущей расшифровкой; отдельно проверены отрицания, короткие ответы, вопросы и фразы с ошибками распознавания.")
+if asr_validation:
+    table(["Проверка","Результат"],[[label,str(asr_validation[key])] for key,label in [
+        ("recordings","Повторно распознано записей"),("reviewed_segments","Прочитано исходных сегментов"),
+        ("text_correction_count","Исправлено текстов реплик"),("timing_only_count","Уточнено временных границ"),
+        ("recovered_segments","Восстановлено пропущенных реплик"),("unresolved_count","Фрагменты с неуверенным распознаванием")]
+        if key in asr_validation],[365,130])
+    repeat=asr_validation.get("repeat_review",{})
+    if repeat:
+        add(f"Повторно распознано {repeat.get('clips',0)} коротких фрагментов, каждый двумя проходами. Исправления и исходные варианты сохранены в журнале.","SmallRu")
+    examples=asr_validation.get("correction_examples",asr_validation.get("examples",[]))
+    selected=[]
+    for keyword in ["аспирантуру","академразницу","Как вы себя чувствуете?"]:
+        example=next((e for e in examples if keyword.lower() in e.get("after","").lower()),None)
+        if example and example not in selected:selected.append(example)
+    for example in selected or examples[:3]:
+        pid=example.get("participant_id") or example.get("recording_id","").split("_",1)[-1]
+        add(f"{names.get(pid,pid)} · {timecode(example.get('start_s'))}: «{trim(example.get('before',''),100)}» → «{trim(example.get('after',''),150)}».","SmallRu")
+add("По аудиодорожкам извлечены основной тон и его изменчивость, энергия, паузы, доля звучащей речи, спектральный центр, наклон и форманты. Темп рассчитан по числу слов и длительности реплик. Голоса разделены по речевым представлениям WeSpeaker.")
+heading("Сопоставление с эталоном")
+add("Для каждой истории найден соответствующий участок интервью. Проверены событие, действующее лицо, время, действие и отрицание. Короткие ответы рассмотрены вместе с предшествующим вопросом. Результаты приведены по участникам на следующих страницах.")
+table(["Категория","Критерий"],[[relation[k],v] for k,v in [
+ ("consistent","Устный ответ воспроизводит событие или деталь эталона."),
+ ("contradiction_candidate","Устное утверждение расходится с письменным событием или деталью."),
+ ("different","Приведён другой пример или дополнительная деталь."),
+ ("omitted","Письменный эпизод не пересказан."),
+ ("uncertain","Смысл ответа или отдельные слова остаются неоднозначными.")]], [175,320])
+add("Полная таблица содержит исходные цитаты, реплики, контекст и временные границы. В отчёте показаны ключевые сопоставления; остальные доступны в приложении и CSV.")
 
 for pid in order:
     story.append(PageBreak())
     heading(names.get(pid,pid))
     summ=next((s for s in review.get("participant_summaries",[]) if s["participant_id"]==pid),{})
-    add(summ.get("content_summary") or summ.get("summary","Результаты сверки приведены ниже."))
-    for addition in report_addenda.get("addenda",[]):
-        if addition.get("participant_id")==pid:
-            add(addition.get("participant_addendum",addition.get("interpretation","")))
+    add(summ.get("content_summary") or summ.get("summary","Сопоставление устных ответов с письменными историями."))
     rows=[]
     for src in [s for s in sources if s["participant_id"]==pid]:
-        n=[n for n in notes if n["story_id"]==src["story_id"]]
-        cats=list(dict.fromkeys(relation.get(x["relation"],x["relation"]) for x in n))
-        rows.append([src["title"],"; ".join(cats)])
-    table(["Письменная история","Результат сверки"],rows,[240,255])
+        related=[n for n in notes if n["story_id"]==src["story_id"]]
+        cats=list(dict.fromkeys(relation.get(x["relation"],x["relation"]) for x in related))
+        rows.append([src["title"],"; ".join(cats) or "Не найден соответствующий эпизод"])
+    if rows:table(["Письменная история","Результат сверки"],rows,[240,255])
     rank={"contradiction_candidate":0,"uncertain":1,"different":2,"consistent":3,"omitted":4}
-    chosen=sorted([n for n in notes if n["participant_id"]==pid and n.get("spoken_excerpt")],
-                  key=lambda n:(rank.get(n["relation"],9),-float(n.get("confidence",0))))[:3]
+    chosen=sorted([n for n in notes if n["participant_id"]==pid and n.get("spoken_excerpt")],key=lambda n:(rank.get(n["relation"],9),-float(n.get("confidence",0))))[:3]
     for n in chosen:
-        add(f"{relation.get(n['relation'],n['relation'])}  {timecode(n.get('start_s'))}–{timecode(n.get('end_s'))}","Sub")
-        add(f"Эталон: «{trim(n.get('source_excerpt'),210)}»","SmallRu")
-        add(f"Речь по ASR: «{trim(n.get('spoken_excerpt'),210)}»","SmallRu")
-        repeated=recheck_by_id.get(n["comparison_id"])
-        if repeated and repeated.get("quote_change") not in (None,"unchanged"):
-            add(f"Уточнение повторной автоматической ASR: «{trim(repeated.get('recommended_stable_excerpt'),210)}». Исходная цитата сохранена для аудита.","SmallRu")
-        if n.get("question_context"):
-            add(f"Вопрос по ASR: «{trim(n['question_context'],250)}»","SmallRu")
-        elif n.get("context_excerpt") and len(n.get("spoken_excerpt","").split())<5:
-            add(f"Контекст по ASR: «{trim(n['context_excerpt'],350)}»","SmallRu")
-        add(trim(n.get("interpretation"),400),"SmallRu")
-    add("Цитаты сокращены только в этом обзорном отчёте. Полный текст, окружающие реплики и границы эпизода сохранены в таблице и приложении. Эти категории описывают сведения, а не личность участника.","SmallRu")
+        add(f"{relation.get(n['relation'],n['relation'])} · {timecode(n.get('start_s'))}–{timecode(n.get('end_s'))}","Sub")
+        add(f"Эталон: «{trim(n.get('source_excerpt'),230)}»","SmallRu")
+        if n.get("question_summary"):
+            add(f"Смысл вопроса: {trim(n['question_summary'],230)}","SmallRu")
+        elif n.get("question_context"):
+            add(f"Вопрос: «{trim(n['question_context'],230)}»","SmallRu")
+        add(f"Ответ: «{trim(n.get('spoken_excerpt'),230)}»","SmallRu")
+        for extra in n.get("additional_spoken_evidence",[]):
+            question=(f" {extra['question_context']}" if extra.get("question_context") else "")
+            add(f"Следующая реплика · {timecode(extra.get('start_s'))}:{question} «{trim(extra.get('spoken_excerpt'),160)}»","SmallRu")
+        if n.get("protocol_condition"):
+            add(f"Условие блока: {n['protocol_condition']}.","SmallRu")
+        add(trim(n.get("interpretation"),370),"SmallRu")
 
 story.append(PageBreak())
-heading("Статистические гипотезы и модель")
-add("H1: индивидуальный контраст признака между проверенными правдивыми и ложными ответами не зависит от измеренного классического темперамента. H2: добавление темперамента улучшает прогноз на новом участнике. Эти гипотезы сформулированы как план исследования; значимость и точность на данном наборе не заявляются.")
-add("Реализован перестановочный анализ индивидуальных контрастов, поправка Холма, оценка эффекта и bootstrap по участникам. Для модели предусмотрена логистическая регрессия с leave-one-participant-out. Импутация, масштабирование и кодирование обучаются только на тренировочной части. Сравниваются одинаковые варианты без темперамента и с ним [3, 4].")
-add(f"Случайное разделение {total_windows} перекрывающихся окон создало бы риск утечки информации одного человека и завышенной точности. {len(bio)} участников не превращаются в {total_windows} независимых наблюдений. Ни отсутствие подтверждённого эффекта, ни отказ вычислить p не доказывают отсутствия эффекта.")
-table(["Необходимое условие","Состояние"],[
- ["Правдивые письменные источники","Подтверждены пользователем для всех 48 историй"],
- ["Проверенные метки отдельных устных ответов","Не предоставлены; содержательные кандидаты требуют прослушивания"],
- ["Классический темперамент","Не измерен; другая типология профилей не подменяется"],
- ["Точная межмодальная синхронизация","Оценивается отдельно с неопределённостью; ручная проверка поддерживается"],
- ["Независимая оценка модели","Код реализован; численную точность по реальным меткам пока вычислять некорректно"],
-],[220,275])
-heading("Что требуется для завершённого эксперимента")
-add("Прослушать отмеченные ответы, независимо разметить экспериментальное условие и проверить межэкспертное согласие; подтвердить синхронизацию; получить валидные измерения темперамента и увеличить число участников. После этого использовать фиксированный набор признаков и групповой протокол проверки, не подбирая правила по итоговому тесту.")
-story.append(PageBreak())
-heading("Интерфейс и воспроизводимость")
-add("Веб-интерфейс работает локально на FastAPI. Пять зон связаны общей шкалой: навигация по времени; речь и правдивые истории; ЭКГ, RIP, GSR и rPPG; один видеопоток с ROI и точками позы; спектр ВСР и текущие численные признаки. Настройка смещения и разметка сохраняются в JSON.")
+heading("Статистический анализ")
+add("Реализованы расчёт индивидуальных контрастов между правдивыми и ложными ответами, перестановочный тест, поправка Холма и bootstrap по участникам. Модель классификации — логистическая регрессия. Проверка выполняется с исключением одного участника; обработка признаков обучается внутри тренировочной выборки [3, 4].")
+add("Проверяемые гипотезы: различаются ли контрасты признаков между типами темперамента; улучшает ли добавление темперамента классификацию ответов нового участника.")
+add("В исходной таблице профилей представлена другая типология, а классический темперамент не измерен. Поэтому сравнение по четырём типам темперамента и точность такой модели не рассчитаны. Содержательные результаты текущего эксперимента представлены сопоставлениями ответов с эталонами.")
+heading("Интерфейс и запуск")
+add("Локальное приложение объединяет пять зон: временную шкалу; стенограмму и истории; биосигналы; видео с областями лица и позой; спектр ВСР и численные признаки. Переход по цитате открывает нужный фрагмент с вопросом. Разметка и смещение сохраняются в JSON.")
 interface_path=OUT/"report/interface.png"
 if interface_path.exists():
-    interface_image=Image(str(interface_path))
-    image_scale=min(495/interface_image.imageWidth,540/interface_image.imageHeight)
-    interface_image.drawWidth=interface_image.imageWidth*image_scale
-    interface_image.drawHeight=interface_image.imageHeight*image_scale
-    story.append(interface_image)
-    add("Рисунок 3. Фактический локальный интерфейс с видео, ROI, позой, сигналами и показателями. Снимок содержит приватные материалы исследования и включается только в локальный отчёт; он исключён из публичного репозитория. Видимость данных не означает подтверждение синхронизации или достоверности отдельных высказываний.","SmallRu")
-add("Для запуска в подготовленной папке используется start.cmd. Установка с нуля, Windows/Linux/macOS, CPU/GPU, зависимости и команды обработки описаны в README.md. Подготовлены Dockerfile, docker-compose.yml, environment.yml, модульные тесты и GitHub Actions. Исходные данные и персональные результаты исключены из публикации.")
+    im=Image(str(interface_path));scale=min(495/im.imageWidth,340/im.imageHeight)
+    im.drawWidth=im.imageWidth*scale;im.drawHeight=im.imageHeight*scale;story.append(im)
+    add(f"Рисунок {4 if ppg_records else 3}. Интерфейс просмотра и сопоставления записей.","SmallRu")
+add("Запуск: start.cmd. Подготовлены инструкции для Windows/Linux/macOS, Dockerfile, docker-compose.yml, зависимости, тесты и GitHub Actions. Код опубликован отдельно от персональных исходных данных.")
 integrity=read(OUT/"audit/project.json",{})
-if integrity:
-    add(f"Автоматический аудит целостности: {integrity.get('status','н/д')}; проверено записей: {len(integrity.get('recordings',[]))}; замечаний: {len(integrity.get('errors',[]))}. Он проверяет комплектность и форматы, но не заменяет проверку точности алгоритмов по независимой разметке.")
-validation=read(OUT/"validation.json",{})
-if validation:
-    table(["Проверка","Результат"],[[k,str(v)] for k,v in validation.items()],[210,285])
-else:
-    add("Подробные команды и результаты проверки приведены в docs/validation.md.")
-heading("Соответствие заданию")
-table(["Блок","Реализовано и ограничения"],[
- ["Синхронизация","Явные часы, ручные метки, оценка смещения в допустимом диапазоне; неоднозначность показывается"],
- ["Видео","Лицевые ROI, POS-rPPG, видимая поза и кинематика, дыхательное движение; один ракурс"],
- ["Аудио и БОС","Полная русская ASR, голосовые признаки, диаризация, ЭКГ и RIP; контактный ФПГ отсутствует"],
- ["Интерфейс","Пять синхронных зон, покадровая навигация, эталоны и доказательные эпизоды"],
- ["Исследование","48 историй сверены; статистический и модельный протокол реализован; недостающие метки и темперамент явно отмечены"],
- ["Воспроизводимость","Исходный код, тесты, контейнер, настройки, ноутбук и локальные рассчитанные результаты"],
-],[130,365])
+if integrity:add(f"Аудит комплектности: записей — {len(integrity.get('recordings',[]))}; ошибок — {len(integrity.get('errors',[]))}.")
 story.append(PageBreak())
-heading("Источники и файлы результатов")
-refs=[
- "[1] Task Force of the European Society of Cardiology and NASPE. Heart rate variability. Standards of measurement, physiological interpretation, and clinical use. Circulation, 1996, 93:1043–1065. https://doi.org/10.1161/01.CIR.93.5.1043",
- "[2] Wang W., den Brinker A.C., Stuijk S., de Haan G. Algorithmic Principles of Remote PPG. IEEE TBME, 2017, 64(7):1479–1491. https://doi.org/10.1109/TBME.2016.2609282",
- "[3] Scikit-learn. Cross-validation: grouped data and LeaveOneGroupOut. https://scikit-learn.org/stable/modules/cross_validation.html",
+heading("Источники")
+for ref in [
+ "[1] Task Force of ESC and NASPE. Heart rate variability. Circulation, 1996, 93:1043–1065. https://doi.org/10.1161/01.CIR.93.5.1043",
+ "[2] Wang W. et al. Algorithmic Principles of Remote PPG. IEEE TBME, 2017, 64(7):1479–1491. https://doi.org/10.1109/TBME.2016.2609282",
+ "[3] Scikit-learn. Grouped cross-validation, LeaveOneGroupOut. https://scikit-learn.org/stable/modules/cross_validation.html",
  "[4] SciPy. scipy.stats.permutation_test. https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.permutation_test.html",
  "[5] Google MediaPipe. Face Landmarker and Pose Landmarker. https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker",
  "[6] SYSTRAN. faster-whisper. https://github.com/SYSTRAN/faster-whisper",
- "[7] BioRadio manufacturer. Device documentation and BioCapture specifications; описание фактически декодированного формата — docs/bioradio_format.md.",
-]
-for r in refs:add(r,"SmallRu")
-heading("Основные производные результаты")
-for text in [
- "outputs/research/content_comparison.csv — полная содержательная сверка с цитатами и контекстом.",
- "outputs/research/content_comparison_report.json — сводки по 48 историям и восьми участникам.",
- "outputs/research/audio_recheck.json — повторная автоматическая ASR выбранных фрагментов, хеши и ограничения проверки.",
- "outputs/audio/*.segments.json и *.txt — стенограммы; *.features.csv — акустика.",
- "outputs/bio/*/metrics.csv — показатели окон ВСР; signals.npz — сигналы и RR.",
- "outputs/video/*.json — rPPG, кинематика, ROI и индикаторы качества.",
- "outputs/sync/ — кандидаты синхронизации и неопределённость.",
- "data/private/ — эталонные источники, происхождение меток и ручная разметка.",
-]:add(text,"SmallRu")
-add("Ссылки на исходные личные документы сохранены в локальном каталоге историй. Публичный репозиторий содержит программный код и общую методику; личные тексты, видео, биосигналы и индивидуальные выводы в него не включаются.")
+]:add(ref,"SmallRu")
+heading("Файлы результатов")
+table(["Путь в проекте","Содержимое"],[
+ ["outputs/research/content_comparison.csv","Сопоставления с цитатами, контекстом и временем"],
+ ["outputs/audio/","Стенограммы, временные метки, акустические признаки"],
+ ["outputs/bio/","ЭКГ, ФПГ, RIP, GSR, интервалы и показатели ВСР"],
+ ["outputs/video/","Лицевые области, rPPG и кинематика"],
+ ["outputs/sync/","Фоновые участки и оценки смещения"],
+ ["data/private/","Письменные эталоны и каталог источников"],
+ ["docs/validation.md","Команды и результаты технических проверок"],
+],[235,260])
 
 def footer(c,doc):
     c.setFont("Body",8);c.setFillColor(colors.HexColor("#607071"))
-    c.drawString(50,28,f"НТИ  •  Мультимодальная лаборатория  •  {REPORT_DATE}")
     c.drawRightString(A4[0]-50,28,str(doc.page))
 
 path=args.output
 path.parent.mkdir(parents=True,exist_ok=True)
 doc=SimpleDocTemplate(str(path),pagesize=A4,rightMargin=50,leftMargin=50,topMargin=42,bottomMargin=45,
-                     title="Мультимодальное сопоставление рассказов и физиологических сигналов",author="Лабораторная работа НТИ")
+                     title="Лабораторная работа НТИ. Анализ видео, речи и биосигналов",author="")
 doc.build(story,onFirstPage=footer,onLaterPages=footer)
 print(path)

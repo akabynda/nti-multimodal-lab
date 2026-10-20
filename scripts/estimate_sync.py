@@ -1,6 +1,7 @@
 """Estimate explicitly unverified acquisition-constrained ECG/rPPG alignment."""
 from pathlib import Path
 import argparse
+import hashlib
 import json
 import sys
 
@@ -12,22 +13,45 @@ from nti_lab.alignment import estimate_alignment, compare_modalities
 from nti_lab.biosignals import _safe
 
 
+def resolve_media_source(video, data):
+    """Resolve explicit provenance first, then the actual filename in the data tree."""
+    candidates = []
+    for field in ("source_path", "source_file"):
+        value = video.get(field)
+        if value:
+            path = Path(value)
+            candidates.extend([path] if path.is_absolute() else [data / path, data / "1_30" / path])
+    for path in candidates:
+        if path.is_file():
+            return path
+    name = Path(video.get("source_file", "")).name
+    matches = sorted(p for p in data.rglob(name) if p.is_file()) if name else []
+    if len(matches) > 1:
+        raise ValueError(f"Ambiguous media filename {name}; set video source_path")
+    return matches[0] if matches else data / name
+
+
 def media_info(source, asr, video):
     result = {"recording_duration_s": max(float(asr["duration_s"]),
                                           float(video["duration_s"])),
               "duration_basis": "maximum of decoded audio duration and last analyzed video timestamp",
               "duration_resolution_uncertainty_s": 1 / float(video["analysis_fps"])}
-    if source.exists():
+    if source.is_file():
         import av
         with av.open(str(source)) as container:
             stream = container.streams.video[0]
+            first = next(container.decode(video=0))
             result.update(sample_aspect_ratio=float(stream.sample_aspect_ratio or 1),
-                          video_stream_start_pts_s=float(stream.start_time * stream.time_base),
-                          video_first_decoded_pts_s=float(next(container.decode(video=0)).time))
+                          video_stream_start_pts_s=float(stream.start_time * stream.time_base) if stream.start_time is not None else None,
+                          video_first_decoded_pts_s=float(first.time), source_path=str(source.resolve()))
         with av.open(str(source)) as container:
-            result["audio_first_decoded_pts_s"] = float(next(container.decode(audio=0)).time)
+            if container.streams.audio:
+                result["audio_first_decoded_pts_s"] = float(next(container.decode(audio=0)).time)
+            else:
+                result.update(audio_first_decoded_pts_s=result["video_first_decoded_pts_s"],
+                              media_origin_status="audio_origin_assumed_equal_to_video")
     else:
-        result.update(sample_aspect_ratio=4 / 3, media_origin_status="source_unavailable_assumed_equal_decoded_origins",
+        result.update(sample_aspect_ratio=float(video.get("sample_aspect_ratio", 1)), media_origin_status="source_unavailable_assumed_equal_decoded_origins",
                       audio_first_decoded_pts_s=0., video_first_decoded_pts_s=0.)
     return result
 
@@ -100,7 +124,11 @@ def write_aggregate(output, results):
     fig, axes = plt.subplots(1, 3, figsize=(14, max(4.2, .48 * len(table) + 1.5)),
                              sharey=True, layout="constrained")
     y = np.arange(len(table))
-    labels = [f"P{int(r['recording_id'].split('_')[0]):02d}" for r in rows]
+    bio_summary = output.parent / "bio" / "aggregate_summary.csv"
+    participant_labels = dict(pd.read_csv(bio_summary)[["subject_id", "participant"]].to_numpy()) if bio_summary.exists() else {}
+    labels = [participant_labels.get(r["participant_id"],
+              f"P{int(r['recording_id'].split('_')[0]):02d}" if r["recording_id"].split("_")[0].isdigit() else f"P{i + 1:02d}")
+              for i, r in enumerate(rows)]
     for i, row in enumerate(rows):
         color = colors[row["status"]]
         axes[0].hlines(i, row["acquisition_lead_min_s"], row["acquisition_lead_max_s"],
@@ -137,7 +165,7 @@ def write_aggregate(output, results):
     for ax in axes:
         ax.grid(axis="x", alpha=.2)
         ax.set_axisbelow(True)
-    fig.suptitle("All clock offsets remain unverified; scale = 1", fontsize=13)
+    fig.suptitle(f"Synchronization: {len(rows)} participants; candidate offsets, scale = 1", fontsize=13)
     fig.supxlabel("Blue: supported candidate; orange: ambiguous. Gray lines: acquisition bounds. "
                   "Colored intervals: sensitivity bounds, not confidence intervals.\n"
                   "n counts overlapping 30 s windows, not independent observations.", fontsize=9)
@@ -147,16 +175,24 @@ def write_aggregate(output, results):
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--data", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--recording", help="Optional exact recording_id")
+    parser.add_argument("--audio", type=Path, help="ASR result directory; defaults to <root>/outputs/audio")
+    parser.add_argument("--force", action="store_true", help="Recompute existing candidates after updated ASR/video")
     args = parser.parse_args()
     output = args.root / "outputs/sync"
+    audio_directory = args.audio or args.root / "outputs/audio"
     output.mkdir(parents=True, exist_ok=True)
     paths = sorted((args.root / "outputs/video").glob("*.json"))
     for path in paths:
         if args.recording and path.stem != args.recording:
+            continue
+        if (output / f"{path.stem}.json").exists() and not args.force:
+            print(f"Keeping existing alignment: {path.stem}", flush=True)
             continue
         try:
             video = json.loads(path.read_text(encoding="utf-8"))
@@ -170,15 +206,20 @@ def main():
             continue
         subject = video["participant_id"]
         biodir = args.root / "outputs/bio" / subject
-        asrpath = args.root / "outputs/audio" / f"{path.stem}.segments.json"
+        asrpath = audio_directory / f"{path.stem}.segments.json"
         if not asrpath.exists() or not (biodir / "signals.npz").exists():
             print(f"WAIT required modalities: {path.stem}", flush=True)
             continue
         bio = dict(np.load(biodir / "signals.npz"))
         metadata = json.loads((biodir / "metadata.json").read_text(encoding="utf-8"))
         asr = json.loads(asrpath.read_text(encoding="utf-8"))
-        info = media_info(args.data / "1_30" / video["source_file"], asr, video)
+        info = media_info(resolve_media_source(video, args.data), asr, video)
         result = estimate_alignment(video, bio, metadata, asr, info)
+        result["analysis_inputs"] = {
+            "video_result": str(path.resolve()), "asr_result": str(asrpath.resolve()),
+            "asr_sha256": hashlib.sha256(asrpath.read_bytes()).hexdigest(),
+            "bio_source_sha256": metadata.get("source_sha256"),
+        }
         bio_windows = pd.read_csv(biodir / "metrics.csv").to_dict("records")
         rows = compare_modalities(video, bio, result, bio_windows)
         pairs = pd.DataFrame(rows)
@@ -213,7 +254,13 @@ def main():
         temporary.replace(destination)
         plot_alignment(output / f"{path.stem}.png", result)
         print(f"{path.stem}: {result['status']}, lead={result.get('bio_lead_s')}, score={result.get('joint_support',{}).get('best_score')}", flush=True)
-    results = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(output.glob("000*.json"))]
+    results = []
+    for path in sorted(output.glob("*.json")):
+        if path.name == "summary.json":
+            continue
+        result = json.loads(path.read_text(encoding="utf-8"))
+        if "recording_id" in result and "status" in result:
+            results.append(result)
     temporary = output / "summary.json.tmp"
     temporary.write_text(json.dumps({"recordings": results}, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     temporary.replace(output / "summary.json")

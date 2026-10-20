@@ -1,6 +1,7 @@
 """Local five-zone research interface, saved annotations and explicit clocks."""
 from __future__ import annotations
 import csv
+import hashlib
 import json
 import os
 import re
@@ -17,7 +18,7 @@ ROOT=Path(os.environ.get("NTI_PROJECT_ROOT",Path(__file__).resolve().parents[2])
 DATA=Path(os.environ.get("NTI_DATA_ROOT",ROOT.parent)).resolve()
 OUTPUT=ROOT/"outputs"
 STATIC=Path(__file__).parent/"static"
-app=FastAPI(title="НТИ · Мультимодальная лаборатория",version="0.1.0")
+app=FastAPI(title="НТИ · Анализ записей",version="0.1.0")
 app.mount("/static",StaticFiles(directory=STATIC),name="static")
 
 
@@ -89,8 +90,12 @@ def session(sid):
     if isinstance(stories,dict):
         stories=stories.get("stories",[])
     bio_dir=OUTPUT/"bio"/participant
-    comparisons=read_json(OUTPUT/"research/content_comparison.json",{}).get("comparisons",[])
-    rechecks=read_json(OUTPUT/"research/audio_recheck.json",{}).get("candidate_checks",[])
+    comparison_path=OUTPUT/"research/content_comparison.json"
+    comparisons=read_json(comparison_path,{}).get("comparisons",[])
+    recheck_doc=read_json(OUTPUT/"research/audio_recheck.json",{})
+    current_hash=hashlib.sha256(comparison_path.read_bytes()).hexdigest() if comparison_path.exists() else None
+    rechecks=(recheck_doc.get("candidate_checks",[])
+              if current_hash and recheck_doc.get("source_comparisons_sha256")==current_hash else [])
     return {"id":sid,"participant_id":participant,"annotation":cfg,
         "comparisons":[r for r in comparisons if r.get("participant_id")==participant],
         "audio_rechecks":[r for r in rechecks if r.get("participant_id")==participant],
@@ -102,6 +107,7 @@ def session(sid):
         "bio":read_json(bio_dir/"metadata.json",{}),
         "biosignals":read_json(bio_dir/"timeseries.json",{}),
         "hrv":load_csv(bio_dir/"metrics.csv"),
+        "ppg_metrics":load_csv(bio_dir/"ppg_metrics.csv"),
         "stories":[s for s in stories if s.get("participant_id")==participant],
         "matches":[s for s in load_csv(OUTPUT/"research/story_matches.csv")
                    if s.get("recording_id")==sid],

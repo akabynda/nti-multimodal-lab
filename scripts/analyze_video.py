@@ -19,7 +19,10 @@ if __name__=="__main__":
     p.add_argument("--end-index",type=int)
     a=p.parse_args()
     models(Path(a.models))
-    files=sorted(Path(a.input).glob("*.MTS"))[a.start_index:a.end_index]
+    source=Path(a.input)
+    files=([source] if source.is_file() else sorted(f for f in source.iterdir()
+            if f.suffix.lower() in {".mts",".mp4",".mov",".mkv",".m2ts"}))
+    files=files[a.start_index:a.end_index]
     with concurrent.futures.ProcessPoolExecutor(max_workers=a.workers) as pool:
         for name in pool.map(run,[(f,Path(a.output),Path(a.models),12.5,a.max_seconds) for f in files]):
             print(name,flush=True)

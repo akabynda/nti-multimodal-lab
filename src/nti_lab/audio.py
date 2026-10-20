@@ -302,7 +302,7 @@ def transcribe_file(model, path: Path, out: Path, args):
         pipeline = BatchedInferencePipeline(model=model)
         generated, info = pipeline.transcribe(
             audio, language="ru", batch_size=args.batch_size,
-            beam_size=5, vad_filter=True,
+            beam_size=args.beam_size, vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 300, "speech_pad_ms": 200},
             word_timestamps=True, condition_on_previous_text=False,
         )
@@ -324,10 +324,16 @@ def transcribe_file(model, path: Path, out: Path, args):
         result = {
             "schema_version": 1, "recording_id": recording_id, "participant_id": participant,
             "source_file": path.name, "duration_s": duration, "language": info.language,
-            "model": "faster-whisper-large-v3-turbo", "device": args.device,
+            "model": Path(args.model).name, "model_path": str(Path(args.model).resolve()),
+            "model_sha256": args.model_sha256, "device": args.device,
             "compute_type": args.compute_type, "timebase": "audio_seconds_from_first_decoded_sample",
+            "decoding": {"backend": "faster-whisper BatchedInferencePipeline", "beam_size": args.beam_size,
+                         "batch_size": args.batch_size, "word_timestamps": True,
+                         "condition_on_previous_text": False, "initial_prompt": None,
+                         "vad_filter": True, "min_silence_duration_ms": 300, "speech_pad_ms": 200},
             "asr_status": "automatic_unreviewed", "segments": segments,
         }
+        write_json(out / f"{recording_id}.raw.json", result)
         write_json(target, result)
         print(f"ASR_READY {target} segments={len(segments)} elapsed={time.time()-started:.1f}s", flush=True)
     if not result.get("utterance_segmentation"):
@@ -381,10 +387,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, default=Path("../1_30"))
     parser.add_argument("--output", type=Path, default=Path("outputs/audio"))
-    parser.add_argument("--model", default="models/faster-whisper-large-v3-turbo")
+    parser.add_argument("--model", default="models/faster-whisper-large-v3")
     parser.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
     parser.add_argument("--compute-type", default="int8_float16")
     parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--beam-size", type=int, default=10)
     parser.add_argument("--skip-existing", action="store_true")
     parser.add_argument("--overrides", type=Path, default=Path("data/private/annotations/speakers"))
     parser.add_argument("--limit", type=int)
@@ -393,6 +400,12 @@ def main():
     stages.add_argument("--features-only", action="store_true")
     parser.add_argument("--wait-for-asr", action="store_true")
     args = parser.parse_args()
+    import hashlib
+    model_file = Path(args.model) / "model.bin"
+    args.model_sha256 = None
+    if model_file.is_file():
+        with model_file.open("rb") as handle:
+            args.model_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
     sys.stdout.reconfigure(encoding="utf-8")
     setup_cuda(Path(__file__).resolve().parents[2])
     from faster_whisper import WhisperModel

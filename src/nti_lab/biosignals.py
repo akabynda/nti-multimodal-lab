@@ -186,9 +186,17 @@ def analyze_ppg(ppg: np.ndarray, fs: float, window_s=120, step_s=5) -> tuple[pd.
         row = {"window_start_s": start, "window_end_s": start + window_s,
                "center_s": start + window_s / 2, "source": "contact_PPG_PRV"}
         row.update(hrv_metrics(rr_t, rr_ms, accepted, start, start + window_s))
+        segment = np.asarray(ppg)[int(start * fs):int((start + window_s) * fs)]
+        finite = np.isfinite(segment)
+        span = float(np.ptp(segment[finite])) if finite.any() else 0.
+        gap = row["max_interpolation_gap_s"]
+        row.update(ppg_nonfinite_fraction=float((~finite).mean()),
+                   ppg_quality="usable_automatic" if row["rr_rejected_fraction"] <= .1
+                   and row["rr_coverage_fraction"] >= .9 and gap is not None and gap <= 3
+                   and finite.mean() >= .99 and span > 1e-9 else "review_required")
         rows.append(row)
     series = {"pulse_peaks_s": peak_times, "interval_t_s": rr_t,
-              "interval_ms": rr_ms, "interval_accepted": accepted}
+              "interval_ms": rr_ms, "interval_accepted": accepted, "filtered": filtered}
     if len(peaks) >= 4 and peak_times[-1] - peak_times[0] > 10:
         grid = np.arange(peak_times[0], peak_times[-1], .25)
         amplitude = np.interp(grid, peak_times, filtered[peaks])
@@ -333,13 +341,76 @@ def _write_json(path, value):
                                     separators=(",", ":")), encoding="utf-8")
 
 
+def _contact_ppg_results(recording, duration, ecg_frame):
+    """Contact PRV and ECG comparison use the same recorded BioRadio clock."""
+    name = next((n for n in recording.channels if "PPG" in n.upper() or "PLETH" in n.upper()), None)
+    if name is None:
+        return None
+    fs = recording.sample_rates[name]
+    raw = recording.channels[name][:round(duration * fs)]
+    ppg_frame, series = analyze_ppg(raw, fs)
+    t = np.arange(len(raw)) / fs
+    arrays = {"ppg_t_s": t, "ppg_raw": raw, "ppg_filtered": series["filtered"],
+              "ppg_peaks_s": series["pulse_peaks_s"], "ppg_interval_t_s": series["interval_t_s"],
+              "ppg_interval_ms": series["interval_ms"], "ppg_interval_valid": series["interval_accepted"]}
+    step = max(1, round(fs / 25))
+    channel = next(c for c in recording.metadata["channels"] if c["name"] == name)
+    overview = {"available": True, "source_channel": name,
+                "native_unit": channel["native_unit"] or "a.u.",
+                "t_s": t[::step], "raw": raw[::step], "filtered": series["filtered"][::step],
+                "fs_hz": fs / step, "pulse_peaks_s": series["pulse_peaks_s"],
+                "intervals": {"t_s": series["interval_t_s"], "ms": series["interval_ms"],
+                              "accepted": series["interval_accepted"]}}
+    if "respiration_proxy" in series:
+        arrays.update(ppg_respiration_t_s=series["respiration_proxy_t_s"],
+                      ppg_respiration_proxy=series["respiration_proxy"])
+        overview["respiration_proxy"] = {"t_s": series["respiration_proxy_t_s"],
+                                         "value": series["respiration_proxy"], "kind": "pulse amplitude modulation"}
+    measures = ["hr_bpm", "rmssd_ms", "sdnn_ms", "lf_ms2", "hf_ms2", "lf_hf"]
+    ecg = ecg_frame[["window_start_s", "window_end_s", "center_s", "ecg_quality"] + measures].rename(columns={k: f"ecg_{k}" for k in measures})
+    remote = ppg_frame[["window_start_s", "ppg_quality"] + measures].rename(columns={k: f"ppg_{k}" for k in measures})
+    comparison = ecg.merge(remote, on="window_start_s", how="inner", validate="one_to_one")
+    comparison["paired_usable"] = comparison.ecg_quality.eq("usable_automatic") & comparison.ppg_quality.eq("usable_automatic")
+    comparison["clock_basis"] = "shared_BioRadio_samples"
+    for measure in measures:
+        difference = comparison[f"ppg_{measure}"] - comparison[f"ecg_{measure}"]
+        comparison[f"ppg_minus_ecg_{measure}"] = difference.where(comparison.paired_usable)
+    good = ppg_frame.ppg_quality.eq("usable_automatic")
+    changes = np.flatnonzero(np.diff(raw) != 0) + 1
+    edges = np.r_[0, changes, len(raw)]
+    finite_runs = np.isfinite(raw[edges[:-1]])
+    analysis = {"source_channel": name, "sample_rate_hz": fs,
+                "consecutive_value_changes_hz": float(np.count_nonzero(np.isfinite(raw[1:]) & np.isfinite(raw[:-1]) & (raw[1:] != raw[:-1])) / duration),
+                "median_hold_samples": float(np.median(np.diff(edges)[finite_runs])) if finite_runs.any() else None,
+                "sample_rate_note": "Stored grid; pulse-oximeter update timestamps are not separately recorded.",
+                "pulse_peak_count": len(series["pulse_peaks_s"]),
+                "interval_count": len(series["interval_ms"]),
+                "interval_rejected_fraction": float(1 - series["interval_accepted"].mean()) if len(series["interval_accepted"]) else None,
+                "window_count": len(ppg_frame), "usable_ppg_windows": int(good.sum()),
+                "spectral_windows": int(ppg_frame.spectrum_status.eq("exploratory_120s").sum()),
+                "median_pulse_rate_bpm": float(ppg_frame.loc[good, "hr_bpm"].median())}
+    summary = {"clock_basis": "shared_BioRadio_samples", "paired_windows": int(comparison.paired_usable.sum()),
+               "hr_mae_bpm": float(comparison.ppg_minus_ecg_hr_bpm.abs().mean()),
+               "hr_bias_ppg_minus_ecg_bpm": float(comparison.ppg_minus_ecg_hr_bpm.mean()),
+               "rmssd_mae_ms": float(comparison.ppg_minus_ecg_rmssd_ms.abs().mean()),
+               "sdnn_mae_ms": float(comparison.ppg_minus_ecg_sdnn_ms.abs().mean()),
+               "window_s": 120, "step_s": 5, "interval_kind": "PPG PRV versus ECG HRV"}
+    return arrays, overview, analysis, ppg_frame, comparison, summary
+
+
 def analyze_recording(path: str | Path, output_dir: str | Path,
-                      window_s: float = 120, step_s: float = 5) -> dict:
+                      window_s: float = 120, step_s: float = 5,
+                      subject_id: str | None = None) -> dict:
     """Analyze one recording and persist metrics, traces, peak intervals and QC."""
     if window_s != 120 or step_s != 5:
         raise ValueError("This lab protocol requires 120 s windows and 5 s steps")
     recording = read_bcrx(path)
     meta = recording.metadata
+    if subject_id is not None:
+        if not subject_id or subject_id in (".", "..") or any(c in subject_id for c in '/\\:'):
+            raise ValueError("subject_id must be a single directory name")
+        meta["subject_id"] = subject_id
+    meta["source_path"] = str(Path(path).resolve())
     out = Path(output_dir) / meta["subject_id"]
     out.mkdir(parents=True, exist_ok=True)
     duration = meta["analysis_duration_s"]
@@ -419,6 +490,16 @@ def analyze_recording(path: str | Path, output_dir: str | Path,
             if after - before > 3:
                 edr_filtered[(edr_t >= before) & (edr_t <= after)] = np.nan
         arrays.update(edr_t_s=edr_t, edr_mv=edr_filtered)
+    ppg = _contact_ppg_results(recording, duration, frame)
+    if ppg is not None:
+        ppg_arrays, ppg_overview, ppg_analysis, ppg_frame, comparison, ppg_comparison = ppg
+        arrays.update(ppg_arrays)
+        meta.update(ppg_analysis=ppg_analysis, ecg_ppg_comparison=ppg_comparison)
+        ppg_frame.to_csv(out / "ppg_metrics.csv", index=False)
+        comparison.insert(0, "subject_id", meta["subject_id"])
+        comparison.to_csv(out / "ecg_ppg_comparison.csv", index=False)
+        pd.DataFrame({"time_s": ppg_arrays["ppg_interval_t_s"], "interval_ms": ppg_arrays["ppg_interval_ms"],
+                      "accepted": ppg_arrays["ppg_interval_valid"]}).to_csv(out / "ppg_intervals.csv", index=False)
     np.savez_compressed(out / "signals.npz", **arrays)
     # ECG min/max per 0.1 s keeps narrow QRS features visible in a compact overview.
     bin_size = max(1, round(fs / 10))
@@ -429,7 +510,7 @@ def analyze_recording(path: str | Path, output_dir: str | Path,
         "ecg": {"t_s": np.arange(size) / 10, "min_mv": np.min(bins, axis=1),
                 "max_mv": np.max(bins, axis=1), "representation": "0.1 s min/max envelope"},
         "r_peaks_s": peak_times, "rr": {"t_s": rr_t, "ms": rr_ms, "accepted": rr_valid},
-        "ppg": {"available": False, "reason": "No contact PPG channel in source recording"},
+        "ppg": ppg_overview if ppg is not None else {"available": False, "reason": "No contact PPG channel in source recording"},
     }
     if rip is not None:
         overview["rip"] = {"t_s": arrays["rip_t_s"][::5], "mv": arrays["rip_mv"][::5],
@@ -450,7 +531,7 @@ def analyze_recording(path: str | Path, output_dir: str | Path,
         "median_hr_bpm": float(frame.loc[frame["ecg_quality"] == "usable_automatic", "hr_bpm"].median()),
         "median_hr_all_windows_bpm": float(frame["hr_bpm"].median()),
         "respiration_source": "RIP belt; dominant-frequency candidates require review",
-        "contact_ppg_status": "missing_in_supplied_recordings",
+        "contact_ppg_status": "recorded_processed" if ppg is not None else "not_recorded",
         "limitations": [
             "Automatic R peaks and artifact flags are not expert-annotated ground truth.",
             "ULF is not estimable in 120 seconds; it is null, never zero.",
@@ -464,7 +545,42 @@ def analyze_recording(path: str | Path, output_dir: str | Path,
     })
     _write_json(out / "metadata.json", meta)
     _plot_qc(out, meta["subject_id"], arrays, frame)
+    if ppg is not None:
+        _plot_contact_ppg(out, arrays, comparison)
     return _safe(meta)
+
+
+def _plot_contact_ppg(out, arrays, comparison):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, axes = plt.subplots(3, 1, figsize=(11, 8), layout="constrained")
+    use = (arrays["ppg_t_s"] >= 30) & (arrays["ppg_t_s"] < 40)
+    axes[0].plot(arrays["ppg_t_s"][use], arrays["ppg_filtered"][use], color="#0072B2", label="Контактный ФПГ")
+    r_times = arrays["r_peaks_s"][(arrays["r_peaks_s"] >= 30) & (arrays["r_peaks_s"] < 40)]
+    for index, peak in enumerate(r_times):
+        axes[0].axvline(peak, color="#777777", lw=.7, label="R-зубцы ЭКГ" if index == 0 else None)
+    axes[0].set(xlabel="Время БиоРадио, с", ylabel="ФПГ, усл. ед.",
+                title="Контактный ФПГ и R-зубцы ЭКГ на общей шкале БиоРадио")
+    low, high = axes[0].get_ylim()
+    axes[0].set_ylim(low, high + .3 * (high - low))
+    axes[0].legend(loc="upper right", fontsize=9)
+    good = comparison.paired_usable
+    axes[1].plot(comparison.center_s, comparison.ecg_hr_bpm, label="ЭКГ", color="#0072B2")
+    axes[1].plot(comparison.center_s, comparison.ppg_hr_bpm, label="Контактный ФПГ", color="#D55E00", alpha=.7)
+    axes[1].scatter(comparison.loc[~good, "center_s"], comparison.loc[~good, "ppg_hr_bpm"],
+                    marker="x", color="#888888", s=12, label="Окна, исключённые из сравнения")
+    axes[1].set(xlabel="Центр окна, с", ylabel="ЧСС / пульс, уд/мин")
+    axes[1].legend(fontsize=8, loc="lower center", bbox_to_anchor=(.5, 1.01), ncol=3)
+    axes[2].scatter(comparison.loc[good, "center_s"], comparison.loc[good, "ppg_minus_ecg_hr_bpm"],
+                    color="#009E73", s=12)
+    axes[2].axhline(0, color="#777777", lw=.7)
+    axes[2].set(xlabel="Центр окна, с", ylabel="ФПГ − ЭКГ, уд/мин",
+                title=f"Прошедшие контроль окна: {int(good.sum())}; длительность 120 с, шаг 5 с")
+    for ax in axes:
+        ax.grid(alpha=.2)
+    fig.savefig(out / "ecg_ppg_comparison.png", dpi=160)
+    plt.close(fig)
 
 
 def _plot_qc(out, subject, arrays, frame):

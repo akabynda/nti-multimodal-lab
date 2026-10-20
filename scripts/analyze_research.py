@@ -50,16 +50,24 @@ def comparison_plot(output: Path, stories: list[dict], matches: list[dict]):
     pd.DataFrame({"plot_id": [f"P{i+1:02d}" for i in range(len(participants))],
                   "participant_id": participants}).to_csv(output / "plot_participant_key.csv", index=False)
     (output / "story_similarity_alt.txt").write_text(
-        "Матрица 8 участников и 6 письменных историй. Числа показывают максимальное лексическое "
+        f"Матрица {len(participants)} участников и 6 письменных историй. Числа показывают максимальное лексическое "
         "сходство с окном ASR длиной 45 секунд. N/A означает отсутствие стенограммы. "
         "Это описательные значения, не вероятности правды или лжи. Порядок тем у участников разный.",
         encoding="utf-8")
 
 
-def run(root: Path = ROOT, workbook: Path | None = None):
+def run(root: Path = ROOT, workbook: Path | None = None, audio_dir: Path | None = None,
+        notes_path: Path | None = None):
     private = root / "data/private"
     output = root / "outputs/research"
     output.mkdir(parents=True, exist_ok=True)
+    finalized_notes = private / "comparison_notes_large_v3.json"
+    if notes_path is None and finalized_notes.exists():
+        notes_path = finalized_notes
+    if audio_dir is None and notes_path is not None and notes_path.exists():
+        selected = json.loads(notes_path.read_text(encoding="utf-8"))
+        audio_dir = root / selected.get("asr_dir", "outputs/audio")
+    audio_dir = audio_dir or root / "outputs/audio"
     source = json.loads((private / "source_documents.json").read_text(encoding="utf-8"))
     spec = json.loads((private / "catalog_spec.json").read_text(encoding="utf-8"))
     truth_path = private / "reference_truth.json"
@@ -67,6 +75,7 @@ def run(root: Path = ROOT, workbook: Path | None = None):
     stories = build_catalog(source["documents"], spec, reference_truth)
     write_json(private / "stories.json", {
         "schema_version": 1, "source_folder_url": source["source_folder_url"],
+        "source_folder_urls": source.get("source_folder_urls", [source["source_folder_url"]]),
         "source_document_count": len(source["documents"]), "stories": stories})
     text_dir = private / "stories"
     text_dir.mkdir(exist_ok=True)
@@ -78,7 +87,7 @@ def run(root: Path = ROOT, workbook: Path | None = None):
     catalog = pd.DataFrame(stories).drop(columns="text")
     catalog.to_csv(output / "story_catalog.csv", index=False, encoding="utf-8-sig")
     matches, windows, files = [], [], []
-    for path in sorted((root / "outputs/audio").glob("*.segments.json")):
+    for path in sorted(audio_dir.glob("*.segments.json")):
         recording_id = path.name.removesuffix(".segments.json")
         transcript = json.loads(path.read_text(encoding="utf-8"))
         match, window = compare_stories(stories, transcript, recording_id)
@@ -91,22 +100,23 @@ def run(root: Path = ROOT, workbook: Path | None = None):
     pd.DataFrame(windows, columns=list(windows[0]) if windows else ["recording_id", "candidate_story_id", "start_s", "end_s"]).to_csv(
         output / "window_matches.csv", index=False, encoding="utf-8-sig")
     write_json(output / "story_matches.json", {"schema_version": 1, "matches": matches, "transcripts": files})
-    note_path = private / "comparison_notes.json"
+    note_path = notes_path or private / "comparison_notes.json"
     content_review = []
     participant_narratives = {}
     if note_path.exists():
         notes_doc = json.loads(note_path.read_text(encoding="utf-8"))
         participant_narratives = notes_doc.get("participant_narratives", {})
         delegated_path = output / "manual_review_first4.json"
-        if delegated_path.exists():
+        if notes_path is None and delegated_path.exists():
             delegated = json.loads(delegated_path.read_text(encoding="utf-8"))
             reviewed_participants = {n["participant_id"] for n in delegated["notes"]}
             notes_doc["notes"] = [n for n in notes_doc["notes"] if n["participant_id"] not in reviewed_participants] + delegated["notes"]
         content_review = materialize_content_review(
-            stories, notes_doc, root / "outputs/audio")
+            stories, notes_doc, audio_dir)
         write_json(output / "content_comparison.json", {"schema_version": 1, "comparisons": content_review,
                    "reference_truth_provenance": reference_truth,
-                   "warning": "Textual discrepancy is not an individual deception verdict; verify ASR and context"})
+                   "revision_provenance": notes_doc.get("revision_provenance"),
+                   "method": "Exact reference and transcript quotations with adjacent question/answer context"})
         pd.DataFrame(content_review).to_csv(output / "content_comparison.csv", index=False, encoding="utf-8-sig")
     content_report = content_review_report(stories, content_review)
     for participant_summary in content_report["participant_summaries"]:
@@ -152,7 +162,7 @@ def run(root: Path = ROOT, workbook: Path | None = None):
         "content_relation_counts": content_report["relation_counts"],
         "stories_with_contradiction_candidates": content_report["stories_with_contradiction_candidates"],
         "content_comparison_report": "outputs/research/content_comparison_report.json",
-        "warning": "Story topic about a past deception is not a current lie label; lexical mismatch is not deception",
+        "comparison_method": "Reference and ASR quotations; protocol conditions retained separately",
         "hypotheses_status": hypotheses["status"],
     }
     write_json(output / "summary.json", summary)
@@ -164,5 +174,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--workbook", type=Path)
+    parser.add_argument("--audio-dir", type=Path)
+    parser.add_argument("--notes", type=Path, help="Complete reviewed notes; disables legacy first-four merge")
     args = parser.parse_args()
-    run(args.root, args.workbook)
+    run(args.root, args.workbook, args.audio_dir, args.notes)

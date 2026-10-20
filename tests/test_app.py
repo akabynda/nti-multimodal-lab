@@ -34,3 +34,24 @@ def test_signal_outside_recording_has_no_spectrum(tmp_path,monkeypatch):
         result=client.get(f"/api/session/00001_Test/signal-window?t={t}").json()
         assert result=={"status":"outside_recording"}
     module.signal_arrays.cache_clear()
+
+
+def test_recheck_must_match_current_comparison_version(tmp_path,monkeypatch):
+    import hashlib
+    output=tmp_path/"outputs"
+    (output/"media").mkdir(parents=True)
+    (output/"media"/"00001_Test.mp4").touch()
+    research=output/"research";research.mkdir()
+    comparison=research/"content_comparison.json"
+    comparison.write_text(json.dumps({"comparisons":[]}),encoding="utf-8")
+    result={"candidate_checks":[{"participant_id":"Test","comparison_id":"comparison_001"}],
+            "source_comparisons_sha256":"stale"}
+    path=research/"audio_recheck.json"
+    path.write_text(json.dumps(result),encoding="utf-8")
+    monkeypatch.setattr(module,"DATA",tmp_path/"raw")
+    monkeypatch.setattr(module,"OUTPUT",output)
+    client=TestClient(module.app)
+    assert client.get("/api/session/00001_Test").json()["audio_rechecks"]==[]
+    result["source_comparisons_sha256"]=hashlib.sha256(comparison.read_bytes()).hexdigest()
+    path.write_text(json.dumps(result),encoding="utf-8")
+    assert len(client.get("/api/session/00001_Test").json()["audio_rechecks"])==1

@@ -1,13 +1,4 @@
 {
-  "asr": {
-    "repository": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
-    "file": "model.bin",
-    "sha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da",
-    "runtime": "faster-whisper 1.2.1 / CTranslate2 4.8.3",
-    "language": "ru",
-    "compute_type": "int8_float16",
-    "beam_size": 5
-  },
   "speaker_embeddings": {
     "repository": "csukuangfj/speaker-embedding-models",
     "file": "wespeaker_en_voxceleb_resnet34.onnx",
@@ -22,7 +13,34 @@
     "sample_rate_hz": 16000,
     "window_s": 5,
     "step_s": 1,
-    "pitch_range_hz": [60, 500],
+    "pitch_range_hz": [
+      60,
+      500
+    ],
     "formant_ceiling_hz": 5500
+  },
+  "asr_previous_turbo": {
+    "repository": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "file": "model.bin",
+    "sha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da",
+    "runtime": "faster-whisper 1.2.1 / CTranslate2 4.8.3",
+    "language": "ru",
+    "compute_type": "int8_float16",
+    "beam_size": 5
+  },
+  "asr": {
+    "repository": "Systran/faster-whisper-large-v3",
+    "file": "model.bin",
+    "sha256": "69f74147e3334731bc3a76048724833325d2ec74642fb52620eda87352e3d4f1",
+    "runtime": "faster-whisper 1.2.1 / CTranslate2 4.8.3",
+    "language": "ru",
+    "compute_type": "int8_float16",
+    "beam_size": 10,
+    "batch_size": 4,
+    "repeat_review_beam_sizes": [
+      10,
+      1
+    ],
+    "reference_stories_used": false
   }
 }

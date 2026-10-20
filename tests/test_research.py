@@ -39,6 +39,20 @@ def test_comparison_finds_paraphrase_but_only_proposes_review():
     assert compare_stories(stories, {"segments": []}, "P1") == ([], [])
 
 
+def test_separate_story_files_keep_provenance_and_exclude_signature():
+    docs = [{"id": f"source{i}", "title": f"{i}.txt", "url": f"url{i}",
+             "text": f"Тема {i}\nИстория {i}.\nПодпись", "modified_time": "2026-01-01",
+             "extraction_method": "utf8"} for i in [1, 2]]
+    files = [{"source_file_id": f"source{i}", "story_number": i,
+              "heading": f"Тема {i}", "body_end_marker": "Подпись"} for i in [1, 2]]
+    spec = {"participant_id": "P1", "source_files": files, "participant_mapping_evidence": "signature"}
+    result = build_catalog(docs, [spec])
+    assert [s["text"] for s in result] == ["История 1.", "История 2."]
+    assert [s["source_url"] for s in result] == ["url1", "url2"]
+    with pytest.raises(ValueError, match="Duplicate story"):
+        build_catalog(docs, [{**spec, "source_files": [files[0], files[0]]}])
+
+
 def test_participants_never_cross_training_and_test():
     participants = np.repeat(["P1", "P2", "P3"], 4)
     folds = group_splits(participants)
@@ -54,6 +68,16 @@ def test_word_timing_does_not_spread_text_over_long_asr_chunk():
     windows = transcript_windows([{"start": 0, "end": 150, "text": "whole chunk", "words": words}])
     assert windows
     assert all(w["start_s"] >= 120 and w["alignment_unit"] == "word" for w in windows)
+
+
+def test_corrected_segment_uses_final_text_when_word_alignment_is_stale():
+    segment = {"start": 10, "end": 20, "text": "Это исправленная точная реплика из повторной расшифровки.",
+               "word_alignment_status": "original_ASR_word_times_not_realigned_after_editorial_text_change",
+               "words": [{"word": "устаревшее", "start": 12, "end": 13}]}
+    windows = transcript_windows([segment])
+    assert windows
+    assert all(w["text"] == segment["text"] and w["alignment_unit"] == "segment" for w in windows)
+    assert all("устаревшее" not in w["text"] for w in windows)
 
 
 def test_evidence_checks_exact_quote_and_preserves_question_context(tmp_path):
@@ -72,6 +96,13 @@ def test_evidence_checks_exact_quote_and_preserves_question_context(tmp_path):
     rows = materialize_content_review([story], notes, tmp_path)
     assert "Вы когда-нибудь спорили?" in rows[0]["context_excerpt"]
     assert rows[0]["video_truth_label"] is None and rows[0]["audio_verified"] is False
+    contradictory = {**note, "additional_spoken_evidence": [
+        {"start_s": 30, "end_s": 31, "spoken_excerpt": "Да."}]}
+    assert materialize_content_review([story], {"reviewer": "fixture", "notes": [contradictory]}, tmp_path)
+    contradictory["additional_spoken_evidence"][0]["start_s"] = 4
+    contradictory["additional_spoken_evidence"][0]["end_s"] = 6
+    with pytest.raises(ValueError, match="Additional ASR quote"):
+        materialize_content_review([story], {"reviewer": "fixture", "notes": [contradictory]}, tmp_path)
     report = content_review_report([story], rows + [{**rows[0], "comparison_id": "duplicate-evidence"}])
     assert report["stories_reviewed"] == 1 and report["evidence_rows"] == 2
     assert report["stories_with_contradiction_candidates"] == 1

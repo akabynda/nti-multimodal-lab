@@ -26,22 +26,35 @@ def sha256_text(text: str) -> str:
 
 
 def build_catalog(documents: list[dict], specification: list[dict], reference_truth: dict | None = None) -> list[dict]:
-    """Split only the manually inspected headings, keeping source character spans."""
+    """Use inspected headings or individual story files, retaining source spans."""
     source_by_id = {d["id"]: d for d in documents}
     stories = []
     for spec in specification:
-        doc = source_by_id[spec["source_file_id"]]
-        text = doc["text"].replace("\r\n", "\n").replace("\xa0", " ").lstrip("\ufeff")
-        locations = []
-        for heading in spec["headings"]:
-            matches = list(re.finditer(re.escape(heading), text))
-            if len(matches) != 1:
-                raise ValueError(f"Heading ambiguous/missing: {doc['id']}: {heading!r}")
-            locations.append((matches[0].start(), matches[0].end(), heading))
-        if locations != sorted(locations):
-            raise ValueError("Headings must follow source order")
-        for n, (start, body_start, heading) in enumerate(locations, 1):
-            end = locations[n][0] if n < len(locations) else len(text)
+        units = []
+        files = spec.get("source_files") or [spec]
+        for file_spec in files:
+            doc = source_by_id[file_spec["source_file_id"]]
+            text = doc["text"].replace("\r\n", "\n").replace("\xa0", " ").lstrip("\ufeff")
+            headings = [file_spec["heading"]] if "heading" in file_spec else file_spec["headings"]
+            locations = []
+            for heading in headings:
+                matches = list(re.finditer(re.escape(heading), text))
+                if len(matches) != 1:
+                    raise ValueError(f"Heading ambiguous/missing: {doc['id']}: {heading!r}")
+                locations.append((matches[0].start(), matches[0].end(), heading))
+            if locations != sorted(locations):
+                raise ValueError("Headings must follow source order")
+            for local_number, (start, body_start, heading) in enumerate(locations, 1):
+                end = locations[local_number][0] if local_number < len(locations) else len(text)
+                marker = file_spec.get("body_end_marker")
+                if marker:
+                    found = list(re.finditer(re.escape(marker), text))
+                    if len(found) != 1 or not body_start <= found[0].start() <= end:
+                        raise ValueError("Body end marker ambiguous or outside story")
+                    end = found[0].start()
+                number = file_spec.get("story_number", local_number)
+                units.append((number, start, body_start, end, heading, text, doc))
+        for n, start, body_start, end, heading, text, doc in units:
             body = text[body_start:end].strip()
             stories.append({
                 "story_id": f"{spec['participant_id']}_story_{n:02d}",
@@ -61,6 +74,9 @@ def build_catalog(documents: list[dict], specification: list[dict], reference_tr
                 "label_status": "reference_truth_confirmed_by_user" if reference_truth else "not_declared_in_source",
                 "participant_mapping_evidence": spec["participant_mapping_evidence"],
             })
+    ids = [s["story_id"] for s in stories]
+    if len(ids) != len(set(ids)):
+        raise ValueError("Duplicate story numbers in participant catalog")
     return stories
 
 
@@ -96,7 +112,8 @@ def transcript_windows(segments: list[dict], window_s: float = 45, step_s: float
     units = []
     for i, segment in enumerate(segments):
         words = segment.get("words") or []
-        if words:
+        stale_alignment = segment.get("word_alignment_status") == "original_ASR_word_times_not_realigned_after_editorial_text_change"
+        if words and not stale_alignment:
             units.extend({"start": w["start"], "end": w["end"], "text": w.get("word", ""),
                           "segment_id": segment.get("id", i), "alignment_unit": "word"}
                          for w in words)
@@ -199,7 +216,16 @@ def materialize_content_review(stories: list[dict], notes_document: dict, audio_
                 raise ValueError(f"ASR quote outside declared interval for {story_id}")
             context = [s for s in segments
                        if s["end"] >= note["start_s"] - 10 and s["start"] <= note["end_s"] + 5]
+        for extra in note.get("additional_spoken_evidence", []):
+            timed = " ".join(s["text"] for s in segments
+                             if s["end"] >= extra["start_s"] and s["start"] <= extra["end_s"])
+            if normalized_text(extra["spoken_excerpt"]) not in normalized_text(timed):
+                raise ValueError(f"Additional ASR quote outside declared interval for {story_id}")
+            if extra.get("question_context") and normalized_text(extra["question_context"]) not in normalized_text(timed):
+                raise ValueError(f"Additional question outside declared interval for {story_id}")
         context_excerpt = " ".join(s["text"] for s in context) if context else None
+        if note.get("question_context") and normalized_text(note["question_context"]) not in normalized_text(context_excerpt or ""):
+            raise ValueError(f"Question outside declared context for {story_id}")
         rows.append({
             "comparison_id": f"comparison_{number:03d}", **note,
             "story_id": story_id, "story_title": story["title"],
@@ -239,9 +265,7 @@ def content_review_report(stories: list[dict], rows: list[dict]) -> dict:
             "relation_counts": {key: counts[key] for key in relations},
             "comparison_ids": [r["comparison_id"] for r in evidence],
             "contradiction_candidate_ids": candidates,
-            "summary": ("Найдено возможное фактическое противоречие; требуется проверка звука, вопроса и роли говорящего."
-                        if candidates else "Содержательная сверка не установила прямого противоречия."
-                        if evidence else "Содержательная сверка отсутствует."),
+            "summary": " ".join(r["interpretation"] for r in evidence) if evidence else "Тема ещё не сопоставлена.",
             "video_truth_label": None,
         })
     participants = []
@@ -262,12 +286,9 @@ def content_review_report(stories: list[dict], rows: list[dict]) -> dict:
                                     "start_s": r["start_s"], "end_s": r["end_s"],
                                     "spoken_excerpt": r["spoken_excerpt"],
                                     "interpretation": r["interpretation"]} for r in candidates],
-            "summary": (f"Кандидатов на фактическое расхождение: {len(candidates)}; "
-                        f"затронуто письменных историй: {len({r['story_id'] for r in candidates})}. "
-                        "Проверка ASR по звуку и ролей говорящих остаётся обязательной."
-                        if candidates else
-                        "Прямых фактических противоречий при текстовой сверке не установлено. "
-                        "Совпадение части сведений и непересказанные темы не доказывают правдивость всей записи."),
+            "summary": (f"Сопоставлено тем: {sum(s['coverage'] == 'reviewed' for s in owned)} из {len(owned)}. "
+                        f"Фрагментов с несовместимыми утверждениями: {len(candidates)}; "
+                        f"затронуто историй: {len({r['story_id'] for r in candidates})}."),
             "video_truth_label": None,
         })
     counts = Counter(r["relation"] for r in rows)
@@ -279,11 +300,9 @@ def content_review_report(stories: list[dict], rows: list[dict]) -> dict:
         "stories_with_contradiction_candidates": sum(bool(t["contradiction_candidate_ids"]) for t in topics),
         "participant_summaries": participants, "topic_summaries": topics,
         "limits": [
-            "Все письменные истории считаются правдивыми по прямому указанию пользователя.",
-            "Категории относятся к отдельным сведениям, а не ко всему видео или личности.",
+            "Письменные истории используются как истинные эталоны.",
             "Число заметок не равно числу независимых ответов: один ответ может сопоставляться с несколькими историями.",
-            "Текстовые кандидаты требуют прослушивания; роли говорящих и намерение лгать не установлены.",
-            "Пропуск события, другой пример, изменение планов и ошибка ASR не считаются доказанной ложью.",
+            "Сверка выполнена по автоматической стенограмме с сохранением соседних вопросов и ответов.",
         ],
         "audio_verified": False, "review_required": True,
     }

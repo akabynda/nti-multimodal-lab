@@ -25,4 +25,7 @@ if __name__=="__main__":
     a=p.parse_args()
     out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-        list(pool.map(convert,[(f,out/(f.stem+".mp4")) for f in sorted(Path(a.input).glob("*.MTS"))]))
+        source=Path(a.input)
+        files=([source] if source.is_file() else sorted(f for f in source.iterdir()
+                if f.suffix.lower() in {".mts",".mp4",".mov",".mkv",".m2ts"}))
+        list(pool.map(convert,[(f,out/(f.stem+".mp4")) for f in files]))

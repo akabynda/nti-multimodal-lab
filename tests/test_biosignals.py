@@ -5,12 +5,12 @@ import zlib
 import numpy as np
 import pytest
 
-from nti_lab.biosignals import analyze_ppg, clean_rr, detect_ppg_peaks, detect_r_peaks, hrv_metrics, read_bcrx, respiratory_metrics, rr_spectrum
+from nti_lab.biosignals import analyze_ppg, analyze_recording, clean_rr, detect_ppg_peaks, detect_r_peaks, hrv_metrics, read_bcrx, respiratory_metrics, rr_spectrum
 
 
-def _archive(path, arrays, duration, indices=None):
+def _archive(path, arrays, duration, indices=None, sample_rate=1000):
     definitions = "".join(f"""<CustomSignalDefinition><Signal><Name>{name}</Name>
-        <SamplesPerSecond>1000</SamplesPerSecond><Units>V</Units>
+        <SamplesPerSecond>{sample_rate}</SamplesPerSecond><Units>V</Units>
         <Configuration><ChannelIndex>{i}</ChannelIndex></Configuration></Signal>
         <Gain>1000</Gain><Offset>0</Offset><Units>mV</Units></CustomSignalDefinition>"""
         for i, name in enumerate(arrays))
@@ -118,6 +118,34 @@ def test_ppg_pipeline_and_ui_spectrum():
     assert psd["status"] == "exploratory_120s"
     assert len(psd["frequency_hz"]) == len(psd["power_ms2_hz"]) > 100
     assert "respiration_proxy" in series
+
+
+def test_recorded_contact_ppg_uses_declared_rate_and_shared_ecg_clock(tmp_path):
+    import json
+    import pandas as pd
+    fs, duration = 250, 125
+    t = np.arange(duration * fs) / fs
+    ecg = np.zeros(len(t))
+    for peak in np.arange(1, duration - 1, .8):
+        ecg -= .001 * np.exp(-((t - peak) / .018) ** 2)
+    path = tmp_path / "arbitrary-session.bcrx"
+    _archive(path, {"ECG": [ecg], "PPG PulseOx1": [np.sin(2 * np.pi * 1.25 * (t - .2))]},
+             duration, sample_rate=fs)
+    metadata = analyze_recording(path, tmp_path / "out", subject_id="Participant09")
+    assert metadata["subject_id"] == "Participant09"
+    assert metadata["source_file"] == path.name
+    assert metadata["channels"][0]["sample_rate_hz"] == 250
+    assert metadata["contact_ppg_status"] == "recorded_processed"
+    assert metadata["ppg_analysis"]["median_pulse_rate_bpm"] == pytest.approx(75, abs=1)
+    assert metadata["ecg_ppg_comparison"]["paired_windows"] > 0
+    assert metadata["ecg_ppg_comparison"]["hr_mae_bpm"] < 1
+    folder = tmp_path / "out" / "Participant09"
+    overview = json.loads((folder / "timeseries.json").read_text())
+    assert overview["ppg"]["available"] is True
+    with np.load(folder / "signals.npz") as arrays:
+        assert len(arrays["ppg_raw"]) == fs * duration
+        assert arrays["ppg_t_s"][1] == 1 / fs
+    assert len(pd.read_csv(folder / "ecg_ppg_comparison.csv")) == 2
 
 
 _local_recording = next(Path(__file__).resolve().parents[2].glob("*.bcrx"), None)
