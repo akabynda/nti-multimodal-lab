@@ -55,3 +55,37 @@ def test_recheck_must_match_current_comparison_version(tmp_path,monkeypatch):
     result["source_comparisons_sha256"]=hashlib.sha256(comparison.read_bytes()).hexdigest()
     path.write_text(json.dumps(result),encoding="utf-8")
     assert len(client.get("/api/session/00001_Test").json()["audio_rechecks"])==1
+
+
+def test_session_profile_uses_only_the_linked_participant_row(tmp_path,monkeypatch):
+    import csv
+    output=tmp_path/"outputs"
+    (output/"media").mkdir(parents=True)
+    for sid in ("00001_Test","00002_Other","00003_Unlinked","00004_Missing","00005_NotFound"):
+        (output/"media"/f"{sid}.mp4").touch()
+    research=output/"research";research.mkdir()
+    profile={"participant_id":"Test","tab_number":"123456","profile_link_status":"explicit_tab_number_match",
+             "profile_natural_raw":"Профиль из Excel","profile_demonstrated_raw":"Другой профиль",
+             "expression":"0","emotion_positive":"0","emotion_negative":"2.50","emotion_balance":"-2.50",
+             "profile_source_sheet":"Лист 1","profile_source_row":"8","profile_source_file":"profiles.xlsx"}
+    other={**profile,"participant_id":"Other","tab_number":"654321","profile_natural_raw":"Чужой профиль"}
+    unlinked={**profile,"participant_id":"Unlinked","profile_link_status":"unlinked"}
+    not_found={**dict.fromkeys(profile,""),"participant_id":"NotFound","tab_number":"339013",
+               "profile_link_status":"requested_id_not_found"}
+    with (research/"profile_link_audit.csv").open("w",encoding="utf-8-sig",newline="") as handle:
+        writer=csv.DictWriter(handle,fieldnames=list(profile))
+        writer.writeheader();writer.writerows([other,profile,unlinked,not_found])
+    private=tmp_path/"data/private";private.mkdir(parents=True)
+    (private/"participant_names.json").write_text(json.dumps({"Test":"Тестовый участник","Other":"Другой участник"}),encoding="utf-8")
+    monkeypatch.setattr(module,"ROOT",tmp_path)
+    monkeypatch.setattr(module,"DATA",tmp_path/"raw")
+    monkeypatch.setattr(module,"OUTPUT",output)
+    client=TestClient(module.app)
+    result=client.get("/api/session/00001_Test").json()
+    assert result["profile"]==profile
+    assert result["profile_display_name"]=="Тестовый участник"
+    assert client.get("/api/session/00002_Other").json()["profile"]==other
+    assert client.get("/api/session/00003_Unlinked").json()["profile"] is None
+    missing=client.get("/api/session/00004_Missing").json()
+    assert missing["profile"] is None and missing["profile_display_name"] is None
+    assert client.get("/api/session/00005_NotFound").json()["profile"]==not_found

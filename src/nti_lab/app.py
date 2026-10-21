@@ -96,7 +96,12 @@ def session(sid):
     current_hash=hashlib.sha256(comparison_path.read_bytes()).hexdigest() if comparison_path.exists() else None
     rechecks=(recheck_doc.get("candidate_checks",[])
               if current_hash and recheck_doc.get("source_comparisons_sha256")==current_hash else [])
+    profile=next((row for row in load_csv(OUTPUT/"research/profile_link_audit.csv")
+                  if row.get("participant_id")==participant
+                  and row.get("profile_link_status") in {"explicit_tab_number_match","requested_id_not_found"}),None)
+    names=read_json(ROOT/"data/private/participant_names.json",{})
     return {"id":sid,"participant_id":participant,"annotation":cfg,
+        "profile":profile,"profile_display_name":names.get(participant),
         "comparisons":[r for r in comparisons if r.get("participant_id")==participant],
         "audio_rechecks":[r for r in rechecks if r.get("participant_id")==participant],
         "alignment":alignment,
