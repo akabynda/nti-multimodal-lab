@@ -554,33 +554,35 @@ def _plot_contact_ppg(out, arrays, comparison):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(3, 1, figsize=(11, 8), layout="constrained")
-    use = (arrays["ppg_t_s"] >= 30) & (arrays["ppg_t_s"] < 40)
-    axes[0].plot(arrays["ppg_t_s"][use], arrays["ppg_filtered"][use], color="#0072B2", label="Контактный ФПГ")
-    r_times = arrays["r_peaks_s"][(arrays["r_peaks_s"] >= 30) & (arrays["r_peaks_s"] < 40)]
-    for index, peak in enumerate(r_times):
-        axes[0].axvline(peak, color="#777777", lw=.7, label="R-зубцы ЭКГ" if index == 0 else None)
-    axes[0].set(xlabel="Время БиоРадио, с", ylabel="ФПГ, усл. ед.",
-                title="Контактный ФПГ и R-зубцы ЭКГ на общей шкале БиоРадио")
-    low, high = axes[0].get_ylim()
-    axes[0].set_ylim(low, high + .3 * (high - low))
-    axes[0].legend(loc="upper right", fontsize=9)
-    good = comparison.paired_usable
-    axes[1].plot(comparison.center_s, comparison.ecg_hr_bpm, label="ЭКГ", color="#0072B2")
-    axes[1].plot(comparison.center_s, comparison.ppg_hr_bpm, label="Контактный ФПГ", color="#D55E00", alpha=.7)
-    axes[1].scatter(comparison.loc[~good, "center_s"], comparison.loc[~good, "ppg_hr_bpm"],
-                    marker="x", color="#888888", s=12, label="Окна, исключённые из сравнения")
-    axes[1].set(xlabel="Центр окна, с", ylabel="ЧСС / пульс, уд/мин")
-    axes[1].legend(fontsize=8, loc="lower center", bbox_to_anchor=(.5, 1.01), ncol=3)
-    axes[2].scatter(comparison.loc[good, "center_s"], comparison.loc[good, "ppg_minus_ecg_hr_bpm"],
-                    color="#009E73", s=12)
-    axes[2].axhline(0, color="#777777", lw=.7)
-    axes[2].set(xlabel="Центр окна, с", ylabel="ФПГ − ЭКГ, уд/мин",
-                title=f"Прошедшие контроль окна: {int(good.sum())}; длительность 120 с, шаг 5 с")
-    for ax in axes:
-        ax.grid(alpha=.2)
-    fig.savefig(out / "ecg_ppg_comparison.png", dpi=160)
-    plt.close(fig)
+    from .palette import BLUE, MUTED, PLOT_STYLE, VIOLET
+    with plt.rc_context(PLOT_STYLE):
+        fig, axes = plt.subplots(3, 1, figsize=(11, 8), layout="constrained")
+        use = (arrays["ppg_t_s"] >= 30) & (arrays["ppg_t_s"] < 40)
+        axes[0].plot(arrays["ppg_t_s"][use], arrays["ppg_filtered"][use], color=VIOLET, label="Контактный ФПГ")
+        r_times = arrays["r_peaks_s"][(arrays["r_peaks_s"] >= 30) & (arrays["r_peaks_s"] < 40)]
+        for index, peak in enumerate(r_times):
+            axes[0].axvline(peak, color=BLUE, lw=.7, label="R-зубцы ЭКГ" if index == 0 else None)
+        axes[0].set(xlabel="Время БиоРадио, с", ylabel="ФПГ, усл. ед.",
+                    title="Контактный ФПГ и R-зубцы ЭКГ на общей шкале БиоРадио")
+        low, high = axes[0].get_ylim()
+        axes[0].set_ylim(low, high + .3 * (high - low))
+        axes[0].legend(loc="upper right", fontsize=9)
+        good = comparison.paired_usable
+        axes[1].plot(comparison.center_s, comparison.ecg_hr_bpm, label="ЭКГ", color=BLUE, linestyle="-")
+        axes[1].plot(comparison.center_s, comparison.ppg_hr_bpm, label="Контактный ФПГ", color=VIOLET, linestyle="--", alpha=.7)
+        axes[1].scatter(comparison.loc[~good, "center_s"], comparison.loc[~good, "ppg_hr_bpm"],
+                        marker="x", color=MUTED, s=12, label="Окна, исключённые из сравнения")
+        axes[1].set(xlabel="Центр окна, с", ylabel="ЧСС / пульс, уд/мин")
+        axes[1].legend(fontsize=8, loc="lower center", bbox_to_anchor=(.5, 1.01), ncol=3)
+        axes[2].scatter(comparison.loc[good, "center_s"], comparison.loc[good, "ppg_minus_ecg_hr_bpm"],
+                        color=VIOLET, s=12)
+        axes[2].axhline(0, color=MUTED, lw=.7)
+        axes[2].set(xlabel="Центр окна, с", ylabel="ФПГ − ЭКГ, уд/мин",
+                    title=f"Прошедшие контроль окна: {int(good.sum())}; длительность 120 с, шаг 5 с")
+        for ax in axes:
+            ax.grid(alpha=1)
+        fig.savefig(out / "ecg_ppg_comparison.png", dpi=160)
+        plt.close(fig)
 
 
 def _plot_qc(out, subject, arrays, frame):
