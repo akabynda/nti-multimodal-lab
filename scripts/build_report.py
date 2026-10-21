@@ -107,6 +107,7 @@ order=[a["participant_id"] for a in audios]
 # Personal display names are supplied locally, never embedded in public code.
 private_names=read(ROOT/"data/private/participant_names.json",{})
 names={pid:private_names.get(pid,f"Участник P{i:02}") for i,pid in enumerate(order,1)}
+by_profile={row["participant_id"]:row for row in csvrows(OUT/"research/profile_link_audit.csv")}
 total_windows=sum(b.get("window_count",0) for b in bio)
 by_alignment={a.get("participant_id",a.get("subject_id")):a for a in alignments}
 gsr_review_count=sum(b.get("gsr_quality",{}).get("status")=="flat_or_out_of_range_review_required" for b in bio)
@@ -150,6 +151,24 @@ table(["Участник","Статус","Диапазон опережения,
  interval(by_alignment.get(pid,{}).get("lead_bounds_s")),
  num(by_alignment.get(pid,{}).get("bio_to_video_offset_s",(by_alignment.get(pid,{}).get("candidate") or {}).get("bio_to_video_offset_s")),2)]
  for pid in order],[135,140,110,110])
+story.append(PageBreak())
+heading("Данные участников")
+table(["Участник","ИСУ","Естественный","Демонстрируемый","Выраженность"],[
+ [names[pid],by_profile.get(pid,{}).get("tab_number") or "н/д",
+  by_profile.get(pid,{}).get("profile_natural_raw","").replace("/","/\n") or "н/д",
+  by_profile.get(pid,{}).get("profile_demonstrated_raw","").replace("/","/\n") or "н/д",
+  by_profile.get(pid,{}).get("expression") or "н/д"]
+ for pid in order],[125,55,110,115,90])
+add("Эмоциональные показатели","Sub")
+table(["Участник","Эмоц+","Эмоц−","Эмоц_Баланс"],[
+ [f"P{i+1:02}",by_profile.get(pid,{}).get("emotion_positive") or "н/д",
+  by_profile.get(pid,{}).get("emotion_negative") or "н/д",
+  by_profile.get(pid,{}).get("emotion_balance") or "н/д"]
+ for i,pid in enumerate(order)],[75,140,140,140])
+for pid in order:
+    if by_profile.get(pid,{}).get("profile_link_status")=="requested_id_not_found":
+        add(f"{names[pid]}: ИСУ {by_profile[pid]['tab_number']} в исходной таблице отсутствует.","SmallRu")
+add("Результаты.xlsx; сопоставление по ИСУ","SmallRu")
 story.append(PageBreak())
 heading("ЭКГ, дыхание и качество сигналов")
 add("Файлы BCRX декодированы в численные ряды. Частоты дискретизации, единицы и коэффициенты прочитаны из заголовков. После фильтрации ЭКГ найдены R-зубцы, проверены RR-интервалы и рассчитаны ЧСС, SDNN, RMSSD, pNN50, VLF, LF, HF и LF/HF [1].")
