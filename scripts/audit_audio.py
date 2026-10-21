@@ -30,8 +30,13 @@ for path in sorted(output.glob("*.segments.json")):
     if not args.asr_only:
         assert features, f"Acoustic features missing: {path}"
         assert data.get("diarization"), f"Diarization metadata missing: {path}"
-    assert not any(s.get("speaker_role", "unconfirmed") != "unconfirmed" and
-                   s.get("speaker_label_status") != "manual" for s in segments), path
+    assert not any(s.get("speaker_role", "unconfirmed") not in {"unconfirmed", "unknown"} and
+                   s.get("speaker_label_status") not in {"manual", "editorial_context_review"} for s in segments), path
+    if data.get("editorial_review"):
+        source_ids = {s["id"] for s in segments}
+        assert {sid for turn in data["turns"] for sid in turn["segment_ids"]} == source_ids, path
+        assert all(t["speaker_role"] in {"interviewer", "respondent", "unknown"} for t in data["turns"]), path
+        assert all(0 <= t["start"] <= t["end"] <= duration + .1 for t in data["turns"]), path
     for row in features:
         assert 0 <= float(row["start_s"]) < float(row["end_s"]) <= duration + 0.01, path
         assert 0 <= float(row["speech_fraction"]) <= 1.00001, path
