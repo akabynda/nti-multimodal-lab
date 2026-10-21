@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from nti_lab.research import (build_catalog, compare_stories, content_review_report, grouped_validation, materialize_content_review,
                               profile_roster, temperament_hypotheses)
+from nti_lab.story_topics import display_story_titles
 
 
 def write_json(path, obj):
@@ -85,7 +86,7 @@ def run(root: Path = ROOT, workbook: Path | None = None, audio_dir: Path | None 
     roster, all_profiles = profile_roster(workbook or root.parent / "Результаты.xlsx", spec)
     roster.to_csv(private / "participant_profiles.csv", index=False, encoding="utf-8-sig")
     roster.to_csv(output / "profile_link_audit.csv", index=False, encoding="utf-8-sig")
-    catalog = pd.DataFrame(stories).drop(columns="text")
+    catalog = pd.DataFrame([display_story_titles(s) for s in stories]).drop(columns="text")
     catalog.to_csv(output / "story_catalog.csv", index=False, encoding="utf-8-sig")
     matches, windows, files = [], [], []
     for path in sorted(audio_dir.glob("*.segments.json")):
@@ -96,9 +97,11 @@ def run(root: Path = ROOT, workbook: Path | None = None, audio_dir: Path | None 
         windows.extend(window)
         files.append({"recording_id": recording_id, "segments": len(transcript.get("segments", [])),
                       "reference_matches": len(match), "transcript_path": str(path.relative_to(root))})
-    pd.DataFrame(matches, columns=list(matches[0]) if matches else ["recording_id", "candidate_story_id", "similarity", "review_required"]).to_csv(
+    display_matches = [display_story_titles(r) for r in matches]
+    display_windows = [display_story_titles(r) for r in windows]
+    pd.DataFrame(display_matches, columns=list(display_matches[0]) if display_matches else ["recording_id", "candidate_story_id", "similarity", "review_required"]).to_csv(
         output / "story_matches.csv", index=False, encoding="utf-8-sig")
-    pd.DataFrame(windows, columns=list(windows[0]) if windows else ["recording_id", "candidate_story_id", "start_s", "end_s"]).to_csv(
+    pd.DataFrame(display_windows, columns=list(display_windows[0]) if display_windows else ["recording_id", "candidate_story_id", "start_s", "end_s"]).to_csv(
         output / "window_matches.csv", index=False, encoding="utf-8-sig")
     write_json(output / "story_matches.json", {"schema_version": 1, "matches": matches, "transcripts": files})
     note_path = notes_path or private / "comparison_notes.json"
@@ -118,8 +121,9 @@ def run(root: Path = ROOT, workbook: Path | None = None, audio_dir: Path | None 
                    "reference_truth_provenance": reference_truth,
                    "revision_provenance": notes_doc.get("revision_provenance"),
                    "method": "Exact reference and transcript quotations with adjacent question/answer context"})
-        pd.DataFrame(content_review).to_csv(output / "content_comparison.csv", index=False, encoding="utf-8-sig")
+        pd.DataFrame([display_story_titles(r) for r in content_review]).to_csv(output / "content_comparison.csv", index=False, encoding="utf-8-sig")
     content_report = content_review_report(stories, content_review)
+    content_report["topic_summaries"] = [display_story_titles(r) for r in content_report["topic_summaries"]]
     for participant_summary in content_report["participant_summaries"]:
         participant_summary["content_summary"] = participant_narratives.get(participant_summary["participant_id"])
     write_json(output / "content_comparison_report.json", content_report)
