@@ -139,7 +139,10 @@ def transcript_windows(segments: list[dict], window_s: float = 45, step_s: float
     units = []
     for i, segment in enumerate(segments):
         words = segment.get("words") or []
-        stale_alignment = segment.get("word_alignment_status") == "original_ASR_word_times_not_realigned_after_editorial_text_change"
+        stale_alignment = segment.get("word_alignment_status") in {
+            "original_ASR_word_times_not_realigned_after_editorial_text_change",
+            "repeat_ASR_word_times_not_realigned_after_editorial_text_change",
+        }
         if words and not stale_alignment:
             units.extend({"start": w["start"], "end": w["end"], "text": w.get("word", ""),
                           "segment_id": segment.get("id", i), "alignment_unit": "word"}
@@ -264,7 +267,7 @@ def materialize_content_review(stories: list[dict], notes_document: dict, audio_
             "context_excerpt": context_excerpt,
             "context_start_s": min(s["start"] for s in context) if context else None,
             "context_end_s": max(s["end"] for s in context) if context else None,
-            "speaker_role_status": "not_verified",
+            "speaker_role_status": "editorial_context_review" if transcript.get("editorial_review") else "not_verified",
             "audio_verified": False, "review_required": True, "video_truth_label": None,
         })
     return rows
