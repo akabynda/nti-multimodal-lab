@@ -95,6 +95,7 @@ def percent(value):
 
 bio=read(OUT/"bio/summary.json",{}).get("recordings",[])
 research=read(OUT/"research/summary.json",{})
+multimodal=read(OUT/"research/multimodal/summary.json",{})
 review=read(OUT/"research/content_comparison_report.json",{})
 notes=read(OUT/"research/content_comparison.json",{}).get("comparisons",[])
 sources=read(ROOT/"data/private/stories.json",{}).get("stories",[])
@@ -286,16 +287,67 @@ for pid in order:
 
 story.append(PageBreak())
 heading("Статистический анализ")
-add("Реализованы расчёт индивидуальных контрастов между правдивыми и ложными ответами, перестановочный тест, поправка Холма и bootstrap по участникам. Модель классификации — логистическая регрессия. Проверка выполняется с исключением одного участника; обработка признаков обучается внутри тренировочной выборки [3, 4].")
-add("Проверяемые гипотезы: различаются ли контрасты признаков между типами темперамента; улучшает ли добавление темперамента классификацию ответов нового участника.")
-add("В исходной таблице профилей представлена другая типология, а классический темперамент не измерен. Поэтому сравнение по четырём типам темперамента и точность такой модели не рассчитаны. Содержательные результаты текущего эксперимента представлены сопоставлениями ответов с эталонами.")
+if not multimodal.get("models"):
+    raise SystemExit("Run scripts/analyze_multimodal.py before building the report")
+dataset=multimodal["dataset"]
+model_rows=multimodal["models"]
+model_metrics={row["id"]:row["metrics"] for row in model_rows}
+increment=multimodal["profile_increment"]
+fusion_increment=multimodal["fusion_profile_increment"]
+add(f"Профили всех {dataset['participants']} участников объединены с измерениями. Для проверки моделей использована выборка из {dataset['trials']} ответов: соответствуют эталону - {dataset['agreements']}, содержат несоответствие - {dataset['contradictions']}. При нескольких проверяемых утверждениях ответ получает метку несоответствия, если различается хотя бы одно. Повторные ссылки на один ответ объединены. Эти числа описывают модельную выборку, а не общее количество случаев лжи в эксперименте.")
+add("Основное сравнение: видео + речь (AV) и те же признаки с профилями. Проверка LOPO каждый раз исключает целиком одного участника. Заполнение пропусков и масштабирование обучаются только на остальных. L2-логистическая регрессия: C = 0,1, порог 0,5, без подбора параметров. Участники имеют равный вес при обучении и оценке; Brier усреднён сначала внутри участника [3, 7].","SmallRu")
+add("Профили включают выраженность, Эмоц+, Эмоц− и отдельные признаки наличия компонентов естественного и демонстрируемого типа. Эмоциональный баланс используется в корреляциях. Имена, ИСУ и тексты вопросов и эталонов в признаки моделей не входят.","SmallRu")
+table(["Модель","Brier","95% ДИ Brier","Сбаланс. точность","ROC AUC"],[
+ [row["name"],num(row["metrics"].get("brier"),3),
+  f"[{num(row['metrics'].get('brier_ci_low'),3)}; {num(row['metrics'].get('brier_ci_high'),3)}]",
+  num(row["metrics"].get("balanced_accuracy"),3),num(row["metrics"].get("roc_auc"),3)]
+ for row in model_rows],[185,50,100,85,75])
+add(f"Brier: меньше лучше. AV = {num(model_metrics['av']['brier'],4)}; AV + профили = {num(model_metrics['av_profiles']['brier'],4)}. Разность «с профилями минус без профилей» = {num(increment['delta_brier'],4)}; условный 95% ДИ [{num(increment['ci_low'],4)}; {num(increment['ci_high'],4)}]. Отрицательная разность означает уменьшение ошибки.","SmallRu")
+if increment["ci_low"]<=0<=increment["ci_high"]:
+    add("Интервал разности включает ноль: устойчивое преимущество добавления профилей на этой выборке не установлено.","SmallRu")
+classified=model_metrics['av_profiles']['confusion_counts']
+add(f"При пороге 0,5 модель «видео + речь + профили» выделила {classified['tp']} из {dataset['contradictions']} несоответствий; пропущено {classified['fn']}, ложных срабатываний - {classified['fp']}. Сбалансированная точность - {num(100*model_metrics['av_profiles']['balanced_accuracy'],1)}%.","SmallRu")
+if multimodal.get("topic_conclusion_ru"):
+    add(multimodal["topic_conclusion_ru"],"SmallRu")
+
+story.append(PageBreak())
+heading("Неопределённость и контекст BioRadio")
+fig=OUT/"research/multimodal/model_comparison.png"
+if not fig.exists():raise SystemExit(f"Missing analysis figure: {fig}")
+im=Image(str(fig));scale=495/im.imageWidth
+im.drawWidth=im.imageWidth*scale;im.drawHeight=im.imageHeight*scale;story.append(im)
+add(f"Рисунок {4 if ppg_records else 3}. Ошибка на исключённых участниках и изменение при добавлении профилей. Ромбы показывают средние; отдельные точки отражают участников.","SmallRu")
+add(f"95% интервалы получены bootstrap по участникам ({increment.get('bootstrap',5000)} повторов) при фиксированных прогнозах LOPO, без повторного обучения. Они условны относительно обученных моделей и не учитывают всю неопределённость новой выборки. Сбалансированная точность и ROC AUC оценены с равным суммарным весом участников.","SmallRu")
+add("BioRadio добавлен как вторичное расширение: ЧСС, RMSSD ЭКГ и частота RIP характеризуют 120-секундный контекст вокруг ответа. Расчёт повторён на нижних и верхних границах сохранённых интервалов автоматического смещения; масштаб часов не менялся.","SmallRu")
+table(["Граница смещения","Расширение AV","Brier","ROC AUC"],[
+ [scenario["name"],"BioRadio + профили" if row["id"]=="fusion_profiles" else "BioRadio",
+  num(row["metrics"].get("brier"),4),num(row["metrics"].get("roc_auc"),3)]
+ for scenario in multimodal["sync_sensitivity"] for row in scenario["models"]],[145,170,90,90])
+add(f"При исходном смещении Δ Brier для добавления профилей к AV + BioRadio = {num(fusion_increment['delta_brier'],4)}; условный 95% ДИ [{num(fusion_increment['ci_low'],4)}; {num(fusion_increment['ci_high'],4)}]. Границы смещения описывают неопределённость автоматической синхронизации, а не все возможные ошибки часов.","SmallRu")
+add("Для межучастниковых показателей ЭКГ, RIP и rPPG требуется не менее 20% пригодных окон. GSR не прошёл контроль качества; контактный ФПГ одного участника оставлен описательным. Измерения движения лица и тела трактуются как кинематика.","SmallRu")
+
+story.append(PageBreak())
+heading("Связи профилей с измерениями")
+families=multimodal["association_families"]
+associations=multimodal["associations"]
+estimated=sum(row.get("rho") is not None for row in associations)
+add(f"Единица анализа - участник, n = {dataset['participants']}. Заданы {families['primary']} основных сочетаний (выраженность и эмоциональный баланс с 6 признаками) и {families['secondary']} дополнительных. Поправка Холма применена отдельно к каждому семейству; p < 0,05 после поправки у {families['significant_holm']} сочетаний.","SmallRu")
+add(f"Использован коэффициент Спирмена и точные двусторонние перестановки рангов (при n = 9: 9! = 362 880). Оценено {estimated} из {len(associations)} сочетаний; {len(associations)-estimated} недоступны по контролю качества или минимуму n = 6 и сохраняют место в семействе. Интервалы корреляций рассчитаны парным bootstrap участников [4, 7].","SmallRu")
+fig=OUT/"research/multimodal/associations.png"
+if not fig.exists():raise SystemExit(f"Missing analysis figure: {fig}")
+im=Image(str(fig));scale=min(495/im.imageWidth,540/im.imageHeight)
+im.drawWidth=im.imageWidth*scale;im.drawHeight=im.imageHeight*scale;im.hAlign="CENTER";story.append(im)
+add(f"Рисунок {5 if ppg_records else 4}. Все {families['primary']} основных сочетаний. Одна точка соответствует одному участнику; подписи содержат n, коэффициент Спирмена и p Холма.","SmallRu")
+add(f"Полный результат всех {len(associations)} проверок, включая дополнительные и недоступные оценки: outputs/research/multimodal/associations.csv. Отсутствие значимых связей при таком n не доказывает отсутствие связи.","SmallRu")
+
+story.append(PageBreak())
 heading("Интерфейс и запуск")
 add("Локальное приложение объединяет пять зон: временную шкалу; стенограмму и истории; биосигналы; видео с областями лица и позой; спектр ВСР и численные признаки. Переход по цитате открывает нужный фрагмент с вопросом. Разметка и смещение сохраняются в JSON.")
 interface_path=OUT/"report/interface.png"
 if interface_path.exists():
     im=Image(str(interface_path));scale=min(495/im.imageWidth,340/im.imageHeight)
     im.drawWidth=im.imageWidth*scale;im.drawHeight=im.imageHeight*scale;story.append(im)
-    add(f"Рисунок {4 if ppg_records else 3}. Интерфейс просмотра и сопоставления записей.","SmallRu")
+    add(f"Рисунок {6 if ppg_records else 5}. Интерфейс просмотра и сопоставления записей.","SmallRu")
 add("Запуск: start.cmd. Подготовлены инструкции для Windows/Linux/macOS, Dockerfile, docker-compose.yml, зависимости, тесты и GitHub Actions. Код опубликован отдельно от персональных исходных данных.")
 integrity=read(OUT/"audit/project.json",{})
 if integrity:add(f"Аудит комплектности: записей — {len(integrity.get('recordings',[]))}; ошибок — {len(integrity.get('errors',[]))}.")
@@ -308,16 +360,21 @@ for ref in [
  "[4] SciPy. scipy.stats.permutation_test. https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.permutation_test.html",
  "[5] Google MediaPipe. Face Landmarker and Pose Landmarker. https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker",
  "[6] SYSTRAN. faster-whisper. https://github.com/SYSTRAN/faster-whisper",
+ "[7] Kassis, T., Agarwal, V., He, Y., Patel, D., & Brueckner, A. M. (2026). Scientific Agent Skills: A Library of Procedural Knowledge for Research Agents. https://doi.org/10.48550/arXiv.2609.00065",
 ]:add(ref,"SmallRu")
 heading("Файлы результатов")
 table(["Путь в проекте","Содержимое"],[
  ["outputs/research/content_comparison.csv","Сопоставления с цитатами, контекстом и временем"],
+ ["outputs/research/multimodal/analysis-results.zip","Полный анализ: CSV, графики, план, происхождение, параметры и код"],
+ ["outputs/research/multimodal/associations.csv","Все корреляции: n, rho, p, поправка Холма и интервалы"],
+ ["outputs/research/multimodal/participant_features.csv\noutputs/research/multimodal/trial_features.csv","Показатели по участникам и отдельным ответам"],
+ ["outputs/research/multimodal/model_predictions.csv","Прогнозы LOPO для воспроизведения оценок"],
  ["outputs/audio/","Стенограммы, временные метки, акустические признаки"],
  ["outputs/bio/","ЭКГ, ФПГ, RIP, GSR, интервалы и показатели ВСР"],
  ["outputs/video/","Лицевые области, rPPG и кинематика"],
  ["outputs/sync/","Фоновые участки и оценки смещения"],
  ["data/private/","Письменные эталоны и каталог источников"],
- ["docs/validation.md","Команды и результаты технических проверок"],
+ ["docs/validation.md","Порядок технических проверок"],
 ],[235,260])
 
 def footer(c,doc):
