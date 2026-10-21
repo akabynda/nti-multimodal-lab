@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from nti_lab.story_topics import display_story_titles
 
 ROOT=Path(os.environ.get("NTI_PROJECT_ROOT",Path(__file__).resolve().parents[2])).resolve()
 DATA=Path(os.environ.get("NTI_DATA_ROOT",ROOT.parent)).resolve()
@@ -102,7 +103,7 @@ def session(sid):
     names=read_json(ROOT/"data/private/participant_names.json",{})
     return {"id":sid,"participant_id":participant,"annotation":cfg,
         "profile":profile,"profile_display_name":names.get(participant),
-        "comparisons":[r for r in comparisons if r.get("participant_id")==participant],
+        "comparisons":[display_story_titles(r) for r in comparisons if r.get("participant_id")==participant],
         "audio_rechecks":[r for r in rechecks if r.get("participant_id")==participant],
         "alignment":alignment,
         "audio":read_json(OUTPUT/"audio"/f"{sid}.segments.json",{}),
@@ -113,8 +114,8 @@ def session(sid):
         "biosignals":read_json(bio_dir/"timeseries.json",{}),
         "hrv":load_csv(bio_dir/"metrics.csv"),
         "ppg_metrics":load_csv(bio_dir/"ppg_metrics.csv"),
-        "stories":[s for s in stories if s.get("participant_id")==participant],
-        "matches":[s for s in load_csv(OUTPUT/"research/story_matches.csv")
+        "stories":[display_story_titles(s) for s in stories if s.get("participant_id")==participant],
+        "matches":[display_story_titles(s) for s in load_csv(OUTPUT/"research/story_matches.csv")
                    if s.get("recording_id")==sid],
         "media_ready":(OUTPUT/"media"/f"{sid}.mp4").exists()}
 
