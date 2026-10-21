@@ -152,6 +152,7 @@ def run(root: Path = ROOT, workbook: Path | None = None, audio_dir: Path | None 
         "source_documents": len(source["documents"]), "stories": len(stories),
         "participants": len(roster), "profile_workbook_rows": len(all_profiles),
         "profiles_linked_by_explicit_tab_number": int(roster.profile_link_status.eq("explicit_tab_number_match").sum()),
+        "profiles_requested_id_not_found": int(roster.profile_link_status.eq("requested_id_not_found").sum()),
         "classical_temperaments_known": int(roster.temperament.notna().sum()),
         "source_declared_truth_labels": 0,
         "reference_truth_confirmed_by_user": sum(s["declared_truth_label"] == "truth" for s in stories),

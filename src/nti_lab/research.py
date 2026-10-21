@@ -81,21 +81,46 @@ def build_catalog(documents: list[dict], specification: list[dict], reference_tr
 
 
 def profile_roster(workbook: Path, specification: list[dict]) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Join only explicitly attested tab numbers; preserve original taxonomy/spelling."""
-    source = pd.read_excel(workbook).dropna(subset=["Таб."]).copy()
-    source["tab_number"] = source["Таб."].map(lambda x: str(int(x)))
+    """Join attested ISU identifiers to Таб.; retain source values and locations."""
+    def identifier(value):
+        if value is None or pd.isna(value):
+            return None
+        value = str(value).strip()
+        if re.fullmatch(r"\d+\.0+", value):
+            value = value.split(".")[0]
+        if not re.fullmatch(r"\d+", value):
+            raise ValueError(f"Invalid ISU identifier: {value!r}")
+        return value
+
+    with pd.ExcelFile(workbook) as excel:
+        sheet = excel.sheet_names[0]
+        source = pd.read_excel(excel, sheet_name=sheet)
+    source["profile_source_row"] = source.index + 2
+    source = source.dropna(subset=["Таб."]).copy()
+    source["tab_number"] = source["Таб."].map(identifier)
     if source["tab_number"].duplicated().any():
         raise ValueError("Duplicate tab numbers prevent unambiguous profile joins")
+    requested = [identifier(s.get("tab_number")) for s in specification]
+    known = [key for key in requested if key is not None]
+    if len(known) != len(set(known)):
+        raise ValueError("Duplicate participant ISU identifiers")
     indexed = source.set_index("tab_number")
+    workbook_hash = hashlib.sha256(workbook.read_bytes()).hexdigest()
     rows = []
-    for spec in specification:
-        tab = spec.get("tab_number")
+    for spec, tab in zip(specification, requested):
         linked = tab in indexed.index if tab else False
         profile = indexed.loc[tab] if linked else {}
         rows.append({
             "participant_id": spec["participant_id"], "tab_number": tab,
-            "profile_link_status": "explicit_tab_number_match" if linked else "unlinked",
+            "profile_link_status": ("explicit_tab_number_match" if linked else
+                                    "requested_id_not_found" if tab else "unlinked"),
             "profile_link_evidence": spec.get("tab_number_evidence"),
+            "profile_source_file": workbook.name,
+            "profile_source_sha256": workbook_hash,
+            "profile_source_sheet": sheet,
+            "profile_source_row": profile.get("profile_source_row"),
+            "profile_source_number": profile.get("№"),
+            "l34_r": profile.get("Л34(р)"), "l34_p": profile.get("Л34(п)"),
             "profile_natural_raw": profile.get("Естественный"),
             "profile_demonstrated_raw": profile.get("Демонстрируемый"),
             "expression": profile.get("Выраженность"),
@@ -104,7 +129,9 @@ def profile_roster(workbook: Path, specification: list[dict]) -> tuple[pd.DataFr
             "temperament": None, "temperament_source": None,
             "taxonomy_note": "Source profiles are not a validated mapping to the four classical temperaments",
         })
-    return pd.DataFrame(rows), source
+    roster = pd.DataFrame(rows)
+    roster["profile_source_row"] = roster["profile_source_row"].astype("Int64")
+    return roster, source
 
 
 def transcript_windows(segments: list[dict], window_s: float = 45, step_s: float = 10) -> list[dict]:
