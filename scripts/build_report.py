@@ -8,7 +8,6 @@ import argparse
 import json
 import csv
 import math
-from datetime import date
 from collections import Counter
 from xml.sax.saxutils import escape
 from reportlab.pdfgen import canvas
@@ -28,7 +27,6 @@ OUT=ROOT/"outputs"
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output",type=Path,default=OUT/"report"/"Отчет НТИ.pdf")
 args=parser.parse_args()
-REPORT_DATE=date.today().strftime("%d.%m.%Y")
 
 def read(p,default=None):
     return json.loads(Path(p).read_text(encoding="utf-8")) if Path(p).exists() else default
@@ -126,7 +124,6 @@ asr_validation=read(OUT/"audio/validation_summary.json",{})
 
 add("Лабораторная работа НТИ","ReportTitle")
 add("Анализ видео, речи и биосигналов","Section")
-add(REPORT_DATE)
 heading("Задача")
 add("Разработать комплекс синхронного анализа видео, речи и биосигналов и проверить возможность распознавания лжи с учётом профилей участников. В эксперименте участники намеренно изменяли часть ответов. Письменные истории служат правдивым эталоном для разметки.")
 add(f"Обработано {len(audios)} записей общей продолжительностью {sum(a.get('duration_s',0) for a in audios)/60:.2f} мин. Сверено {review.get('stories_reviewed',len(sources))} историй. Подготовлены стенограммы с временными метками, показатели речи, ЭКГ и дыхания, видеопульс, кинематика и локальный интерфейс для просмотра результатов.")
