@@ -21,6 +21,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
 from nti_lab.palette import BLUE, INK, MUTED, LINE, SURFACE, WHITE
+from nti_lab.story_topics import story_topic_title
 
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/"outputs"
@@ -112,7 +113,7 @@ by_profile={row["participant_id"]:row for row in csvrows(OUT/"research/profile_l
 total_windows=sum(b.get("window_count",0) for b in bio)
 by_alignment={a.get("participant_id",a.get("subject_id")):a for a in alignments}
 gsr_review_count=sum(b.get("gsr_quality",{}).get("status")=="flat_or_out_of_range_review_required" for b in bio)
-relation={"consistent":"Согласуется с эталоном","different":"Другой пример или деталь","omitted":"Не рассказано","uncertain":"Неоднозначный ответ","contradiction_candidate":"Расхождение с эталоном"}
+relation={"consistent":"Согласуется с эталоном","different":"Дополнительные сведения","omitted":"Не рассказано","uncertain":"Неоднозначный ответ","contradiction_candidate":"Несоответствие эталону"}
 counts=Counter(n["relation"] for n in notes)
 asr_validation=read(OUT/"audio/validation_summary.json",{})
 
@@ -247,8 +248,8 @@ heading("Сопоставление с эталоном")
 add("Для каждой истории найден соответствующий участок интервью. Проверены событие, действующее лицо, время, действие и отрицание. Короткие ответы рассмотрены вместе с предшествующим вопросом. Результаты приведены по участникам на следующих страницах.")
 table(["Категория","Критерий"],[[relation[k],v] for k,v in [
  ("consistent","Устный ответ воспроизводит событие или деталь эталона."),
- ("contradiction_candidate","Устное утверждение расходится с письменным событием или деталью."),
- ("different","Приведён другой пример или дополнительная деталь."),
+ ("contradiction_candidate","Отрицание факта, замена события, примера или существенной детали эталона."),
+ ("different","Сведения вне проверяемого факта; замены эталонного события или детали нет."),
  ("omitted","Письменный эпизод не пересказан."),
  ("uncertain","Смысл ответа или отдельные слова остаются неоднозначными.")]], [175,320])
 add("Полная таблица содержит исходные цитаты, реплики, контекст и временные границы. В отчёте показаны ключевые сопоставления; остальные доступны в приложении и CSV.")
@@ -262,7 +263,7 @@ for pid in order:
     for src in [s for s in sources if s["participant_id"]==pid]:
         related=[n for n in notes if n["story_id"]==src["story_id"]]
         cats=list(dict.fromkeys(relation.get(x["relation"],x["relation"]) for x in related))
-        rows.append([src["title"],"; ".join(cats) or "Не найден соответствующий эпизод"])
+        rows.append([story_topic_title(src["title"]),"; ".join(cats) or "Не найден соответствующий эпизод"])
     if rows:table(["Письменная история","Результат сверки"],rows,[240,255])
     rank={"contradiction_candidate":0,"uncertain":1,"different":2,"consistent":3,"omitted":4}
     chosen=sorted([n for n in notes if n["participant_id"]==pid and n.get("spoken_excerpt")],key=lambda n:(rank.get(n["relation"],9),-float(n.get("confidence",0))))[:3]
