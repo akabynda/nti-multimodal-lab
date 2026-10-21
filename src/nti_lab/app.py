@@ -195,3 +195,43 @@ def media(sid):
 @app.get("/api/research")
 def research():
     return read_json(OUTPUT/"research/summary.json",{})
+
+
+@app.get("/api/analysis")
+def analysis():
+    summary=read_json(OUTPUT/"research/multimodal/summary.json",{})
+    if not isinstance(summary,dict) or not summary or summary.get("status")=="not_run":
+        return {"status":"not_run"}
+
+    def fields(source,names):
+        source=source if isinstance(source,dict) else {}
+        return {name:source.get(name) for name in names}
+
+    return {
+        "status":summary.get("status","ready"),
+        "findings_ru":[item for item in (summary.get("findings_ru") or []) if isinstance(item,str)],
+        "dataset":fields(summary.get("dataset"),("participants","trials","agreements","contradictions")),
+        "models":[{**fields(item,("id","name")),
+                   "metrics":fields(item.get("metrics"),("brier","balanced_accuracy","roc_auc"))}
+                  for item in (summary.get("models") or []) if isinstance(item,dict)],
+        "profile_increment":fields(summary.get("profile_increment"),("delta_brier","ci_low","ci_high")),
+        "associations":[fields(item,("profile_label","feature_label","n","rho","p_holm"))
+                        for item in (summary.get("associations") or []) if isinstance(item,dict)],
+        "explanation_ru":summary.get("explanation_ru") if isinstance(summary.get("explanation_ru"),str) else "",
+    }
+
+
+ANALYSIS_FILES=frozenset({"summary.json","participant_features.csv","trial_features.csv",
+                         "associations.csv","model_predictions.csv","analysis.md",
+                         "analysis-results.zip","associations.png","model_comparison.png"})
+
+
+@app.get("/analysis/{filename}")
+def analysis_file(filename:str):
+    if filename not in ANALYSIS_FILES:
+        raise HTTPException(404,"Analysis file not found")
+    folder=(OUTPUT/"research/multimodal").resolve()
+    path=(folder/filename).resolve()
+    if path.parent!=folder or not path.is_file():
+        raise HTTPException(404,"Analysis file not found")
+    return FileResponse(path,filename=filename)
