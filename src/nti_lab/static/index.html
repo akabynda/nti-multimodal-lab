@@ -1,14 +1,124 @@
-<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>НТИ · Анализ записей</title><link rel="stylesheet" href="/static/style.css"></head>
-<body><header><div class="brand">НТИ<span>АНАЛИЗ ЗАПИСЕЙ</span></div><div><select id="sessions" aria-label="Выбрать сессию"></select><button id="reload">Обновить данные</button></div></header>
-<main><div class="intro"><div><h1>Видео, речь и биосигналы</h1><p>Сопоставление экспериментальных ответов с письменными историями</p></div><div id="status" class="status">Загрузка…</div></div>
-<section><div class="section-head"><h2><b>01</b> Временная шкала</h2><span id="clock">00:00.00</span></div>
-<div class="transport"><button id="prev">−1 кадр</button><button id="play" class="primary">Воспроизвести</button><button id="next">+1 кадр</button><input id="time" type="range" min="0" max="600" step=".04" value="0" aria-label="Время сессии"><select id="speed"><option>.5</option><option selected>1</option><option>1.5</option><option>2</option></select></div>
-<div id="markers"></div><details><summary>Синхронизация и разметка</summary><div class="controls"><label>Смещение БОС, с <input id="offset" type="number" value="0" step=".01"></label><label>Масштаб часов БОС <input id="scale" type="number" value="1" step=".0001"></label><label><input id="verified" type="checkbox"> Синхронизация проверена</label><button id="saveSync">Сохранить</button></div>
-<p id="alignmentInfo" class="hint"></p><div id="baselines" class="controls"></div><p class="hint">Время сессии = смещение + масштаб × время БОС. Начальный и конечный фон используются для совмещения записей.</p>
-<div class="controls"><label>Начало <input id="eventStart" type="number" step=".01" value="0"></label><button id="setStart">Текущее</button><label>Конец <input id="eventEnd" type="number" step=".01" value="10"></label><button id="setEnd">Текущее</button><select id="eventLabel"><option value="unknown">Неизвестно</option><option value="baseline">База</option><option value="question">Вопрос</option><option value="answer">Ответ</option><option value="topic">Тема</option><option value="truth">Правда</option><option value="lie">Ложь</option></select><input id="eventNote" placeholder="Основание метки / примечание"><label><input id="eventVerified" type="checkbox"> Проверено экспертом</label><button id="addEvent">Добавить метку</button></div><div id="events"></div></details></section>
-<section><div class="section-head"><h2><b>02</b> Расшифровка и правдивые истории</h2><span id="asrInfo">ASR</span></div><div class="text-grid"><div id="transcript" tabindex="0"></div><div class="reference"><select id="storySelect" aria-label="Исходная история"></select><div id="story"></div><div id="match"></div></div></div><div id="evidence"></div><details><summary>Роли говорящих</summary><div id="roles"></div><p class="hint">Назначение ролей сохраняется вместе с разметкой.</p></details></section>
-<section><div class="section-head"><h2><b>03</b> Биосигналы</h2><span id="syncState"></span></div><div class="legend"><span style="color:#007c78">ЭКГ</span><span style="color:#ce6536">rPPG лица</span><span style="color:#74559c">Дыхательный пояс RIP</span><span style="color:#9d7b2b">GSR</span><span id="ppgLegend" style="color:#2565a6" hidden>Контактный ФПГ</span></div><canvas id="signals" height="240"></canvas><p class="hint">Окно графика ±10 с от курсора. Амплитуды показаны отдельно по каналам. Пропуски не соединяются.</p></section>
-<section><div class="section-head"><h2><b>04</b> Видео и видимая кинематика</h2><label><input id="overlayToggle" type="checkbox" checked> Лицевые ROI и скелет</label></div><div class="media-grid"><div class="video-wrap"><video id="video" preload="metadata" playsinline></video><canvas id="overlay"></canvas></div></div><div class="legend"><span>Лоб и щёки используются для rPPG</span><span>Скрытые конечности исключаются из расчёта</span><span id="faceCoverage"></span></div></section>
-<section><div class="section-head"><h2><b>05</b> Аналитический дашборд</h2><span>ВСР: окно 120 с · шаг 5 с</span></div><div class="metrics" id="metrics"></div><div class="analytic-grid"><div><h3>Спектр ВСР</h3><canvas id="spectrum" height="180"></canvas><p class="hint">ULF не оценивается в двухминутном окне. VLF и LF/HF требуют осторожной интерпретации.</p></div><div><h3>Сопоставление модальностей</h3><div id="comparison"></div><p class="hint">Здесь сопоставлены оценки пульса и дыхания по видео с показателями БиоРадио.</p></div></div></section>
-<footer>НТИ · Локальная обработка · Исходные записи сохраняются без изменений <span id="notice"></span></footer></main><script src="/static/app.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>НТИ · Анализ записей</title>
+  <link rel="stylesheet" href="/static/style.css?v=mismatch-20261021">
+</head>
+<body>
+  <a class="skip-link" href="#workspace">К анализу записи</a>
+  <header class="app-header">
+    <div class="app-title"><span class="brand">НТИ</span><h1>Анализ записей</h1></div>
+    <div class="session-picker">
+      <label for="sessions">Участник</label>
+      <select id="sessions" aria-label="Выбрать сессию"></select>
+      <button id="reload" class="icon-button" title="Обновить данные" aria-label="Обновить данные"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.2 7a7 7 0 0 1 11.6-1L20 9M4 15l2.2 3A7 7 0 0 0 17.8 17"/></svg></button>
+    </div>
+  </header>
+  <main id="workspace" tabindex="-1">
+    <div class="record-bar"><span id="sessionNumber">Запись</span><span id="status" role="status">Загрузка…</span></div>
+    <details id="participantProfile" class="participant-profile" hidden>
+      <summary id="profileSummary">Данные участника</summary>
+      <dl id="profileFields" class="profile-fields"></dl>
+      <p id="profileNotice" class="profile-notice" hidden></p>
+    </details>
+    <details id="multimodalAnalysis" class="multimodal-analysis">
+      <summary id="multimodalSummary">Модели и корреляции</summary>
+      <div class="multimodal-content">
+        <p id="multimodalStatus" class="analysis-note" role="status">Загрузка анализа…</p>
+        <div id="multimodalResults" hidden>
+          <div class="analysis-table-wrap" role="region" aria-label="Сравнение моделей" tabindex="0">
+            <table class="analysis-table">
+              <caption id="multimodalModelCaption">Сравнение моделей</caption>
+              <thead><tr><th scope="col">Модель</th><th scope="col">Brier <span>(меньше лучше)</span></th><th scope="col">Сбалансированная точность</th><th scope="col">ROC AUC</th></tr></thead>
+              <tbody id="multimodalModels"></tbody>
+            </table>
+          </div>
+          <p id="multimodalIncrement" class="analysis-increment"></p>
+          <details id="multimodalAssociations" class="analysis-associations">
+            <summary id="multimodalAssociationsSummary">Связи профилей с показателями</summary>
+            <div class="analysis-table-wrap" role="region" aria-label="Все связи профилей с показателями" tabindex="0">
+              <table class="analysis-table association-table">
+                <caption>Корреляции Спирмена · p с поправкой Холма</caption>
+                <thead><tr><th scope="col">Показатель профиля</th><th scope="col">Показатель записи</th><th scope="col">n</th><th scope="col">ρ</th><th scope="col">p Холма</th></tr></thead>
+                <tbody id="multimodalAssociationRows"></tbody>
+              </table>
+            </div>
+          </details>
+          <div class="analysis-downloads"><a href="/analysis/analysis.md" download>Полный отчёт</a><a href="/analysis/analysis-results.zip" download>Результаты ZIP</a></div>
+        </div>
+      </div>
+    </details>
+    <div class="review-workspace">
+      <section class="media-panel" aria-labelledby="videoTitle">
+        <div class="panel-heading"><h2 id="videoTitle">Видео</h2><label class="check-control"><input id="overlayToggle" type="checkbox" checked> Лицо и скелет</label></div>
+        <div class="video-wrap"><video id="video" preload="metadata" playsinline aria-label="Видео участника"></video><canvas id="overlay" aria-hidden="true"></canvas></div>
+        <div class="video-caption"><span id="faceCoverage"></span></div>
+      </section>
+      <section class="text-panel" aria-label="Текст записи и сопоставления">
+        <div class="text-panel-inner">
+          <div id="textTabs" class="text-tabs" role="tablist" aria-label="Материалы записи">
+            <button id="transcriptTab" role="tab" aria-selected="true" aria-controls="transcriptPanel" data-panel="transcriptPanel">Расшифровка <span id="transcriptCount" class="count"></span></button>
+            <button id="referenceTab" role="tab" aria-selected="false" aria-controls="referencePanel" data-panel="referencePanel" tabindex="-1">Истории и сопоставления <span id="storyCount" class="count"></span></button>
+          </div>
+          <div id="transcriptPanel" role="tabpanel" aria-labelledby="transcriptTab">
+            <div class="transcript-toolbar"><span id="asrInfo">Распознавание речи</span><label class="check-control"><input id="followTranscript" type="checkbox" checked> Следить за речью</label></div>
+            <div id="transcript" tabindex="0" aria-label="Реплики с таймкодами"></div>
+          </div>
+          <div id="referencePanel" role="tabpanel" aria-labelledby="referenceTab" tabindex="0" hidden>
+            <div class="story-picker"><label for="storySelect">Правдивая история</label><select id="storySelect" aria-label="Исходная история"></select></div>
+            <details class="story-source"><summary>Полный текст истории</summary><div id="story"></div></details>
+            <div id="match"></div><div id="evidence"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <section class="timeline" aria-label="Управление воспроизведением">
+      <div class="transport">
+        <div class="playback-controls">
+          <button id="prev" class="icon-button" title="На один кадр назад" aria-label="На один кадр назад"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5v14M18 5 8 12l10 7Z"/></svg></button>
+          <button id="play" class="primary">Воспроизвести</button>
+          <button id="next" class="icon-button" title="На один кадр вперёд" aria-label="На один кадр вперёд"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5v14M6 5l10 7-10 7Z"/></svg></button>
+        </div>
+        <div class="time-readout"><span id="clock">00:00.00</span><span class="time-divider">/</span><span id="duration">00:00</span></div>
+        <label class="speed-control">Скорость <select id="speed" aria-label="Скорость воспроизведения"><option value=".5">0,5×</option><option value="1" selected>1×</option><option value="1.5">1,5×</option><option value="2">2×</option></select></label>
+      </div>
+      <div class="scrubber"><input id="time" type="range" min="0" max="600" step=".04" value="0" aria-label="Время сессии"><div id="markers" aria-label="Интервалы записи"></div></div>
+    </section>
+    <section class="signals-panel" aria-labelledby="signalsTitle">
+      <div class="section-heading"><h2 id="signalsTitle">Биосигналы</h2></div>
+      <canvas id="signals" height="240" role="img" aria-label="ЭКГ, rPPG, дыхание и GSR в текущем временном окне"></canvas>
+      <p id="ppgLegend" class="signal-caption" hidden>Контактный ФПГ</p>
+    </section>
+    <section class="analysis-panel" aria-labelledby="analysisTitle">
+      <div class="section-heading"><h2 id="analysisTitle">Показатели текущего окна</h2><span>ВСР: 120 с · шаг 5 с</span></div>
+      <div class="metrics" id="metrics"></div>
+      <details class="analysis-details"><summary>Спектр ВСР и сопоставление сигналов</summary>
+        <div class="analytic-grid">
+          <div><h3>Спектр ВСР</h3><canvas id="spectrum" height="180" role="img" aria-label="Спектр вариабельности сердечного ритма"></canvas></div>
+          <div><h3>Сопоставление сигналов</h3><div id="comparison"></div></div>
+        </div>
+      </details>
+    </section>
+    <details class="settings-panel"><summary>Синхронизация и разметка</summary>
+      <div class="settings-body">
+        <div class="settings-section">
+          <h3>Совмещение с БиоРадио</h3>
+          <div class="controls"><label>Смещение, с <input id="offset" type="number" value="0" step=".01"></label><label>Масштаб часов <input id="scale" type="number" value="1" step=".0001"></label><button id="saveSync">Сохранить</button></div>
+          <div id="baselines" class="controls"></div>
+        </div>
+        <div class="settings-section"><h3>Роли говорящих</h3><div id="roles" class="controls"></div></div>
+        <div class="settings-section">
+          <h3>Новый интервал</h3>
+          <div class="controls interval-controls"><div class="input-action"><label for="eventStart">Начало, с</label><input id="eventStart" type="number" step=".01" value="0"><button id="setStart">Текущее</button></div><div class="input-action"><label for="eventEnd">Конец, с</label><input id="eventEnd" type="number" step=".01" value="10"><button id="setEnd">Текущее</button></div><label>Метка <select id="eventLabel"><option value="unknown">Неизвестно</option><option value="baseline">База</option><option value="question">Вопрос</option><option value="answer">Ответ</option><option value="topic">Тема</option><option value="truth">Правда</option><option value="lie">Ложь</option></select></label></div>
+          <div class="controls"><label class="note-input" for="eventNote">Примечание<input id="eventNote" placeholder="Основание метки"></label><label class="check-control"><input id="eventVerified" type="checkbox"> Проверено экспертом</label><button id="addEvent">Добавить метку</button></div>
+          <div id="events"></div>
+        </div>
+      </div>
+    </details>
+    <footer><span>Видео · речь · БиоРадио</span><span id="notice" role="status" aria-live="polite"></span></footer>
+  </main>
+  <script src="/static/app.js?v=mismatch-20261021"></script>
+</body>
+</html>
