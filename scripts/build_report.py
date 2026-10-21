@@ -20,6 +20,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
+from nti_lab.palette import BLUE, INK, MUTED, LINE, SURFACE, WHITE
 
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/"outputs"
@@ -49,12 +50,14 @@ pdfmetrics.registerFontFamily("Body",normal="Body",bold="BodyBold",italic="Body"
 styles=getSampleStyleSheet()
 for name in styles.byName:
     styles[name].fontName="Body"
-styles.add(ParagraphStyle("ReportTitle",fontName="BodyBold",fontSize=24,leading=30,spaceAfter=18))
-styles.add(ParagraphStyle("Section",fontName="BodyBold",fontSize=15,leading=20,spaceBefore=14,spaceAfter=10,keepWithNext=True))
+    styles[name].textColor=colors.HexColor(INK)
+styles.add(ParagraphStyle("ReportTitle",fontName="BodyBold",fontSize=24,leading=30,spaceAfter=18,textColor=colors.HexColor(BLUE)))
+styles.add(ParagraphStyle("Section",fontName="BodyBold",fontSize=15,leading=20,spaceBefore=14,spaceAfter=10,keepWithNext=True,textColor=colors.HexColor(BLUE)))
 styles.add(ParagraphStyle("Sub",fontName="BodyBold",fontSize=11,leading=15,spaceBefore=10,spaceAfter=5,keepWithNext=True))
 styles.add(ParagraphStyle("TextRu",fontName="Body",fontSize=10,leading=14,spaceAfter=8))
 styles.add(ParagraphStyle("SmallRu",fontName="Body",fontSize=8.4,leading=11,spaceAfter=6))
 styles.add(ParagraphStyle("CellRu",fontName="Body",fontSize=8.2,leading=11,spaceAfter=0))
+styles.add(ParagraphStyle("HeaderCellRu",parent=styles["CellRu"],textColor=colors.HexColor(WHITE)))
 story=[]
 def p(text,style="TextRu"):
     return Paragraph(escape(str(text)).replace("\n","<br/>"),styles[style])
@@ -63,16 +66,16 @@ def add(text,style="TextRu"):
 def heading(text):
     add(text,"Section")
 def table(headers,rows,widths):
-    cells=[[p(x,"CellRu") for x in headers]]+[[p(x,"CellRu") for x in row] for row in rows]
+    cells=[[p(x,"HeaderCellRu") for x in headers]]+[[p(x,"CellRu") for x in row] for row in rows]
     t=Table(cells,colWidths=widths,repeatRows=1,hAlign="LEFT")
     t.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#e5ece7")),
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor(BLUE)),
         ("FONTNAME",(0,0),(-1,0),"BodyBold"),
-        ("GRID",(0,0),(-1,-1),.4,colors.HexColor("#d5ddd7")),
+        ("GRID",(0,0),(-1,-1),.4,colors.HexColor(LINE)),
         ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
         ("LEFTPADDING",(0,0),(-1,-1),7),("RIGHTPADDING",(0,0),(-1,-1),7),
         ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
-        ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#f6f8f5")]),
+        ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor(SURFACE)]),
     ]))
     story.append(t);story.append(Spacer(1,10))
 def timecode(t):
@@ -291,7 +294,7 @@ table(["Путь в проекте","Содержимое"],[
 ],[235,260])
 
 def footer(c,doc):
-    c.setFont("Body",8);c.setFillColor(colors.HexColor("#607071"))
+    c.setFont("Body",8);c.setFillColor(colors.HexColor(MUTED))
     c.drawRightString(A4[0]-50,28,str(doc.page))
 
 path=args.output
