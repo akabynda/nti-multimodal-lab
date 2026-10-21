@@ -98,6 +98,7 @@ review=read(OUT/"research/content_comparison_report.json",{})
 notes=read(OUT/"research/content_comparison.json",{}).get("comparisons",[])
 sources=read(ROOT/"data/private/stories.json",{}).get("stories",[])
 audios=[read(p) for p in sorted((OUT/"audio").glob("*.segments.json"))]
+editorial=read(OUT/"audio/editorial_review.json",{})
 videos=[read(p) for p in sorted((OUT/"video").glob("*.json"))]
 alignments=[read(p) for p in sorted((OUT/"sync").glob("*.json")) if p.stem!="summary"]
 by_bio={x["subject_id"]:x for x in bio}
@@ -218,7 +219,13 @@ story.append(PageBreak())
 heading("Распознавание речи и проверка текста")
 models_used=", ".join(sorted({str(a.get("model","Whisper")) for a in audios}))
 add(f"Для полной расшифровки использована модель {models_used} через faster-whisper [6]. Сохранены временные метки слов и сегментов. Речь повторно сопоставлена с предыдущей расшифровкой; отдельно проверены отрицания, короткие ответы, вопросы и фразы с ошибками распознавания.")
-if asr_validation:
+if editorial:
+    add("После распознавания выполнена сплошная редакторская вычитка диалогов. Назначены роли интервьюера и респондента, объединены разорванные фразы, исправлены очевидные ошибки текста. Исходные варианты и решения сохранены в журнале правок.")
+    table(["Проверка","Результат"],[[label,str(editorial[key])] for key,label in [
+        ("recordings","Вычитано записей"),("reviewed_segments","Проверено исходных сегментов"),
+        ("turns","Реплик после редактирования"),("text_corrections","Текстовых правок на финальной вычитке"),
+        ("merge_groups","Объединено разорванных фраз"),("unresolved_text_fragments","Фрагментов с неуверенным распознаванием")]], [365,130])
+elif asr_validation:
     table(["Проверка","Результат"],[[label,str(asr_validation[key])] for key,label in [
         ("recordings","Повторно распознано записей"),("reviewed_segments","Прочитано исходных сегментов"),
         ("text_correction_count","Исправлено текстов реплик"),("timing_only_count","Уточнено временных границ"),
@@ -235,7 +242,7 @@ if asr_validation:
     for example in selected or examples[:3]:
         pid=example.get("participant_id") or example.get("recording_id","").split("_",1)[-1]
         add(f"{names.get(pid,pid)} · {timecode(example.get('start_s'))}: «{trim(example.get('before',''),100)}» → «{trim(example.get('after',''),150)}».","SmallRu")
-add("По аудиодорожкам извлечены основной тон и его изменчивость, энергия, паузы, доля звучащей речи, спектральный центр, наклон и форманты. Темп рассчитан по числу слов и длительности реплик. Голоса разделены по речевым представлениям WeSpeaker.")
+add("По аудиодорожкам извлечены основной тон и его изменчивость, энергия, паузы, доля звучащей речи, спектральный центр, наклон и форманты. Темп рассчитан по числу слов и длительности реплик. Кластеры WeSpeaker использованы как начальная разметка; итоговые роли проверены по контексту диалога." if editorial else "По аудиодорожкам извлечены основной тон и его изменчивость, энергия, паузы, доля звучащей речи, спектральный центр, наклон и форманты. Темп рассчитан по числу слов и длительности реплик. Голоса разделены по речевым представлениям WeSpeaker.")
 heading("Сопоставление с эталоном")
 add("Для каждой истории найден соответствующий участок интервью. Проверены событие, действующее лицо, время, действие и отрицание. Короткие ответы рассмотрены вместе с предшествующим вопросом. Результаты приведены по участникам на следующих страницах.")
 table(["Категория","Критерий"],[[relation[k],v] for k,v in [
