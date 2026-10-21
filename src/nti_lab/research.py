@@ -317,7 +317,7 @@ def content_review_report(stories: list[dict], rows: list[dict]) -> dict:
                                     "spoken_excerpt": r["spoken_excerpt"],
                                     "interpretation": r["interpretation"]} for r in candidates],
             "summary": (f"Сопоставлено тем: {sum(s['coverage'] == 'reviewed' for s in owned)} из {len(owned)}. "
-                        f"Фрагментов с несовместимыми утверждениями: {len(candidates)}; "
+                        f"Фрагментов с несоответствием эталону: {len(candidates)}; "
                         f"затронуто историй: {len({r['story_id'] for r in candidates})}."),
             "video_truth_label": None,
         })
