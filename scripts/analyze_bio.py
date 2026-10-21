@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pandas as pd
 from nti_lab.biosignals import analyze_recording, read_session
+from nti_lab.palette import BLUE, PLOT_STYLE, RED
 
 
 def aggregate_plot(output, summaries):
@@ -44,17 +45,17 @@ def aggregate_plot(output, summaries):
                             "rejected_rr_pct": 100 * meta["rr_rejected_fraction"]})
     data = pd.DataFrame(records)
     data.to_csv(output / "aggregate_summary.csv", index=False)
-    with plt.rc_context({"font.size": 10, "axes.spines.top": False, "axes.spines.right": False}):
+    with plt.rc_context({**PLOT_STYLE, "font.size": 10, "axes.spines.top": False, "axes.spines.right": False}):
         fig, axes = plt.subplots(1, 3, figsize=(11, max(4.6, .38 * len(data) + 1.5)), sharey=True, layout="constrained")
-        axes[0].scatter(data["median_hr_bpm"], data["participant"], color="#0072B2", marker="o")
+        axes[0].scatter(data["median_hr_bpm"], data["participant"], color=BLUE, marker="o")
         axes[0].set(xlabel="Медианная ЧСС в пригодных\nокнах (уд/мин)", ylabel="Участник")
-        axes[1].barh(data["participant"], data["usable_pct"], color="#0072B2")
+        axes[1].barh(data["participant"], data["usable_pct"], color=BLUE)
         axes[1].set(xlabel="Окна ЭКГ, прошедшие\nконтроль качества (%)", xlim=(0, 100))
-        axes[2].barh(data["participant"], data["rejected_rr_pct"], color="#D55E00")
+        axes[2].barh(data["participant"], data["rejected_rr_pct"], color=RED)
         axes[2].set(xlabel="Исключённые\nRR-интервалы (%)", xlim=(0, max(20, data["rejected_rr_pct"].max() * 1.1)))
         axes[0].invert_yaxis()
         for ax in axes:
-            ax.grid(axis="x", alpha=.2)
+            ax.grid(axis="x", alpha=1)
         fig.suptitle(f"БиоРадио: {len(data)} участников · окна 120 с · шаг 5 с", fontsize=11)
         fig.savefig(output / "aggregate_summary.png", dpi=180, facecolor="white")
         fig.savefig(output / "aggregate_summary.svg", facecolor="white")
