@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>НТИ · Анализ записей</title>
-  <link rel="stylesheet" href="/static/style.css?v=mismatch-20261021">
+  <link rel="stylesheet" href="/static/style.css?v=taste-20261022">
 </head>
 <body>
   <a class="skip-link" href="#workspace">К анализу записи</a>
   <header class="app-header">
-    <div class="app-title"><span class="brand">НТИ</span><h1>Анализ записей</h1></div>
+    <div class="app-title"><span class="brand"><svg viewBox="0 0 32 24" aria-hidden="true"><path d="M1 12h7l4-9 6 18 4-9h9"/></svg>НТИ</span><span class="app-description">Лаборатория биосигналов</span></div>
     <div class="session-picker">
       <label for="sessions">Участник</label>
       <select id="sessions" aria-label="Выбрать сессию"></select>
@@ -17,39 +17,7 @@
     </div>
   </header>
   <main id="workspace" tabindex="-1">
-    <div class="record-bar"><span id="sessionNumber">Запись</span><span id="status" role="status">Загрузка…</span></div>
-    <details id="participantProfile" class="participant-profile" hidden>
-      <summary id="profileSummary">Данные участника</summary>
-      <dl id="profileFields" class="profile-fields"></dl>
-      <p id="profileNotice" class="profile-notice" hidden></p>
-    </details>
-    <details id="multimodalAnalysis" class="multimodal-analysis">
-      <summary id="multimodalSummary">Модели и корреляции</summary>
-      <div class="multimodal-content">
-        <p id="multimodalStatus" class="analysis-note" role="status">Загрузка анализа…</p>
-        <div id="multimodalResults" hidden>
-          <div class="analysis-table-wrap" role="region" aria-label="Сравнение моделей" tabindex="0">
-            <table class="analysis-table">
-              <caption id="multimodalModelCaption">Сравнение моделей</caption>
-              <thead><tr><th scope="col">Модель</th><th scope="col">Brier <span>(меньше лучше)</span></th><th scope="col">Сбалансированная точность</th><th scope="col">ROC AUC</th></tr></thead>
-              <tbody id="multimodalModels"></tbody>
-            </table>
-          </div>
-          <p id="multimodalIncrement" class="analysis-increment"></p>
-          <details id="multimodalAssociations" class="analysis-associations">
-            <summary id="multimodalAssociationsSummary">Связи профилей с показателями</summary>
-            <div class="analysis-table-wrap" role="region" aria-label="Все связи профилей с показателями" tabindex="0">
-              <table class="analysis-table association-table">
-                <caption>Корреляции Спирмена · p с поправкой Холма</caption>
-                <thead><tr><th scope="col">Показатель профиля</th><th scope="col">Показатель записи</th><th scope="col">n</th><th scope="col">ρ</th><th scope="col">p Холма</th></tr></thead>
-                <tbody id="multimodalAssociationRows"></tbody>
-              </table>
-            </div>
-          </details>
-          <div class="analysis-downloads"><a href="/analysis/analysis.md" download>Полный отчёт</a><a href="/analysis/analysis-results.zip" download>Результаты ZIP</a></div>
-        </div>
-      </div>
-    </details>
+    <div class="record-bar"><div><div class="record-title"><h1>Анализ записи</h1><span id="sessionNumber">Запись</span></div><p class="record-description">Видео, речь и физиология на общей шкале времени</p></div><span id="status" role="status">Загрузка…</span></div>
     <div class="review-workspace">
       <section class="media-panel" aria-labelledby="videoTitle">
         <div class="panel-heading"><h2 id="videoTitle">Видео</h2><label class="check-control"><input id="overlayToggle" type="checkbox" checked> Лицо и скелет</label></div>
@@ -87,7 +55,7 @@
       <div class="scrubber"><input id="time" type="range" min="0" max="600" step=".04" value="0" aria-label="Время сессии"><div id="markers" aria-label="Интервалы записи"></div></div>
     </section>
     <section class="signals-panel" aria-labelledby="signalsTitle">
-      <div class="section-heading"><h2 id="signalsTitle">Биосигналы</h2></div>
+      <div class="section-heading"><h2 id="signalsTitle">Биосигналы</h2><span>Окно 20 с · время видеозаписи</span></div>
       <canvas id="signals" height="240" role="img" aria-label="ЭКГ, rPPG, дыхание и GSR в текущем временном окне"></canvas>
       <p id="ppgLegend" class="signal-caption" hidden>Контактный ФПГ</p>
     </section>
@@ -101,6 +69,38 @@
         </div>
       </details>
     </section>
+    <details id="participantProfile" class="participant-profile" hidden>
+      <summary id="profileSummary">Данные участника</summary>
+      <dl id="profileFields" class="profile-fields"></dl>
+      <p id="profileNotice" class="profile-notice" hidden></p>
+    </details>
+    <details id="multimodalAnalysis" class="multimodal-analysis">
+      <summary id="multimodalSummary">Модели и корреляции</summary>
+      <div class="multimodal-content">
+        <p id="multimodalStatus" class="analysis-note" role="status">Загрузка анализа…</p>
+        <div id="multimodalResults" hidden>
+          <div class="analysis-table-wrap" role="region" aria-label="Сравнение моделей" tabindex="0">
+            <table class="analysis-table">
+              <caption id="multimodalModelCaption">Сравнение моделей</caption>
+              <thead><tr><th scope="col">Модель</th><th scope="col">Brier <span>(меньше лучше)</span></th><th scope="col">Сбалансированная точность</th><th scope="col">ROC AUC</th></tr></thead>
+              <tbody id="multimodalModels"></tbody>
+            </table>
+          </div>
+          <p id="multimodalIncrement" class="analysis-increment"></p>
+          <details id="multimodalAssociations" class="analysis-associations">
+            <summary id="multimodalAssociationsSummary">Связи профилей с показателями</summary>
+            <div class="analysis-table-wrap" role="region" aria-label="Все связи профилей с показателями" tabindex="0">
+              <table class="analysis-table association-table">
+                <caption>Корреляции Спирмена · p с поправкой Холма</caption>
+                <thead><tr><th scope="col">Показатель профиля</th><th scope="col">Показатель записи</th><th scope="col">n</th><th scope="col">ρ</th><th scope="col">p Холма</th></tr></thead>
+                <tbody id="multimodalAssociationRows"></tbody>
+              </table>
+            </div>
+          </details>
+          <div class="analysis-downloads"><a href="/analysis/analysis.md" download>Полный отчёт</a><a href="/analysis/analysis-results.zip" download>Результаты ZIP</a></div>
+        </div>
+      </div>
+    </details>
     <details class="settings-panel"><summary>Синхронизация и разметка</summary>
       <div class="settings-body">
         <div class="settings-section">
@@ -119,6 +119,6 @@
     </details>
     <footer><span>Видео · речь · БиоРадио</span><span id="notice" role="status" aria-live="polite"></span></footer>
   </main>
-  <script src="/static/app.js?v=mismatch-20261021"></script>
+  <script src="/static/app.js?v=taste-20261022"></script>
 </body>
 </html>

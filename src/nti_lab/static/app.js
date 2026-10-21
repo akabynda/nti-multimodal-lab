@@ -412,7 +412,7 @@ if(typeof ResizeObserver!=="undefined"){
  for(const element of [$("signals"),$("spectrum"),$("overlay").parentElement])if(element)observer.observe(element);
 }
 initTextTabs();
-const compactLayout=window.matchMedia("(max-width: 720px)");
+const compactLayout=window.matchMedia("(max-width: 800px)");
 function positionTransport(){
  const workspace=document.querySelector(".review-workspace"),timeline=document.querySelector(".timeline");
  if(compactLayout.matches)workspace.before(timeline);else workspace.after(timeline);
