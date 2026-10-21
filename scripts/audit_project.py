@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import csv
+import sys
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -9,10 +10,33 @@ import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "outputs"
+sys.path.insert(0, str(ROOT / "src"))
+from nti_lab.palette import BLUE, PLOT_STYLE, RED
 
 
 def load(path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def plot_video_quality(folder, rows):
+    """Render saved availability rows without recomputing audit metrics."""
+    if not rows:
+        return
+    with plt.rc_context({**PLOT_STYLE, "font.family": "DejaVu Sans", "font.size": 10,
+                         "axes.spines.top": False, "axes.spines.right": False}):
+        fig, ax = plt.subplots(figsize=(9,4.8), layout="constrained")
+        y = np.arange(len(rows))
+        ax.barh(y-.17,[r["face_coverage"]*100 for r in rows],height=.32,color=BLUE,label="Лицевые ROI доступны")
+        ax.barh(y+.17,[r["hr_window_fraction"]*100 for r in rows],height=.32,color=RED,label="ЧСС rPPG прошла автоматический фильтр")
+        ax.set(yticks=y,yticklabels=[r["display_id"] for r in rows],
+               xlim=(0,105),xlabel="Доля кадров / 30-секундных окон, %")
+        ax.invert_yaxis()
+        ax.legend(loc="lower left",bbox_to_anchor=(0,1.01),frameon=False,ncol=1)
+        ax.grid(axis="x",alpha=1)
+        ax.set_axisbelow(True)
+        fig.savefig(folder/"video_quality.png",dpi=180)
+        fig.savefig(folder/"video_quality.svg")
+        plt.close(fig)
 
 
 def main():
@@ -66,21 +90,7 @@ def main():
             writer = csv.DictWriter(f, fieldnames=list(rows[0]))
             writer.writeheader()
             writer.writerows(rows)
-        plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10,
-                             "axes.spines.top": False, "axes.spines.right": False})
-        fig, ax = plt.subplots(figsize=(9,4.8), layout="constrained")
-        y = np.arange(len(rows))
-        ax.barh(y-.17,[r["face_coverage"]*100 for r in rows],height=.32,color="#007c78",label="Лицевые ROI доступны")
-        ax.barh(y+.17,[r["hr_window_fraction"]*100 for r in rows],height=.32,color="#cd784d",label="ЧСС rPPG прошла автоматический фильтр")
-        ax.set(yticks=y,yticklabels=[r["display_id"] for r in rows],
-               xlim=(0,105),xlabel="Доля кадров / 30-секундных окон, %")
-        ax.invert_yaxis()
-        ax.legend(loc="lower left",bbox_to_anchor=(0,1.01),frameon=False,ncol=1)
-        ax.grid(axis="x",alpha=.15)
-        ax.set_axisbelow(True)
-        fig.savefig(folder/"video_quality.png",dpi=180)
-        fig.savefig(folder/"video_quality.svg")
-        plt.close(fig)
+        plot_video_quality(folder, rows)
     print(json.dumps({"status": result["status"], "recordings": len(rows), "errors": errors}, ensure_ascii=False))
     return 0 if result["status"] == "passed" else 1
 
