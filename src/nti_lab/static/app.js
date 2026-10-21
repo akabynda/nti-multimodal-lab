@@ -162,10 +162,8 @@ function renderStories(){
 function showStory(){
  const s=D.stories.find(x=>x.story_id===$("storySelect").value);
  $("story").textContent=s?.text||"Исходная история не связана с участником.";
- const match=D.matches.find(x=>x.candidate_story_id===s?.story_id);
  $("match").replaceChildren();
  if(s?.source_url){const a=node("a","Открыть источник");a.href=s.source_url;a.target="_blank";a.rel="noopener";$("match").append(a)}
- if(match){const details=node("details","");details.append(node("summary","Сведения о сопоставлении"),node("p",`Лексическое сходство: ${fmt(match.similarity_score??match.similarity,3)}`));$("match").append(details)}
  $("evidence").replaceChildren(...(D.comparisons||[]).filter(x=>x.story_id===s?.story_id).map(renderFinding));
  if($("referencePanel"))$("referencePanel").scrollTop=0;
 }
@@ -183,21 +181,14 @@ function renderFinding(r){
   b.setAttribute("aria-label",`Слушать вопрос и ответ с ${clock(start)}`);b.onclick=()=>playFrom(start);head.append(b);
  }
  box.append(head);
- evidenceField(box,"Эталон",r.source_excerpt||r.source_detail,!!r.source_excerpt);
  if(r.question_summary)evidenceField(box,"Смысл вопроса",r.question_summary,false);
  else evidenceField(box,"Вопрос",r.question_context);
+ evidenceField(box,"Эталон",r.source_excerpt||r.source_detail,!!r.source_excerpt);
  evidenceField(box,"Ответ",r.spoken_excerpt);
  for(const extra of r.additional_spoken_evidence||[]){
   const followup=node("div","","finding-followup"),b=node("button",`Слушать реплику ${clock(extra.start_s)}`,"finding-play");
   b.onclick=()=>playFrom(extra.start_s);followup.append(b);
   evidenceField(followup,"Следующий вопрос",extra.question_context);evidenceField(followup,"Ответ",extra.spoken_excerpt);box.append(followup);
- }
- box.append(node("p",r.interpretation||r.reason||"","finding-note"));
- const check=(D.audio_rechecks||[]).find(c=>c.comparison_id===r.comparison_id);
- if(check){
-  const details=node("details","");details.append(node("summary","Повторная автоматическая ASR"),node("p",check.assessment_note||""));
-  if(check.quote_change!=="unchanged"&&check.recommended_stable_excerpt)evidenceField(details,"Устойчивый фрагмент",check.recommended_stable_excerpt);
-  box.append(details);
  }
  if(r.context_excerpt){const details=node("details","");details.append(node("summary","Контекст вопроса и ответа"),node("p",r.context_excerpt));box.append(details)}
  return box;

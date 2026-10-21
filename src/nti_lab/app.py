@@ -93,6 +93,9 @@ def session(sid):
     bio_dir=OUTPUT/"bio"/participant
     comparison_path=OUTPUT/"research/content_comparison.json"
     comparisons=read_json(comparison_path,{}).get("comparisons",[])
+    display_edits=read_json(ROOT/"data/private/report_editorial.json",{}).get("comparisons",{})
+    comparisons=[{**row,**{key:value for key,value in display_edits.get(row.get("comparison_id"),{}).items()
+                           if key in {"question_summary","source_excerpt","spoken_excerpt"}}} for row in comparisons]
     recheck_doc=read_json(OUTPUT/"research/audio_recheck.json",{})
     current_hash=hashlib.sha256(comparison_path.read_bytes()).hexdigest() if comparison_path.exists() else None
     rechecks=(recheck_doc.get("candidate_checks",[])
