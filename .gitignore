@@ -16,3 +16,15 @@ dist/
 vendor/
 tmp/
 qa/
+
+# Local agent instructions, skills, notes and reports
+.agent/
+.agents/
+.codex/
+.claude/
+.cursor/
+.gemini/
+AGENTS.md
+AGENTS.override.md
+CLAUDE.md
+GEMINI.md

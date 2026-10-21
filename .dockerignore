@@ -15,3 +15,25 @@ qa
 *.bcsx
 *.wav
 *.mp4
+
+# Local agent instructions, skills, notes and reports (at any depth)
+.agent
+**/.agent
+.agents
+**/.agents
+.codex
+**/.codex
+.claude
+**/.claude
+.cursor
+**/.cursor
+.gemini
+**/.gemini
+AGENTS.md
+**/AGENTS.md
+AGENTS.override.md
+**/AGENTS.override.md
+CLAUDE.md
+**/CLAUDE.md
+GEMINI.md
+**/GEMINI.md
