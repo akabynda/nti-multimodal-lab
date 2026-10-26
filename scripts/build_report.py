@@ -89,6 +89,27 @@ def subheading(text):
     contents_entry(f"{numbers['section']}.{numbers['sub']} {text}","Sub",1)
 def next_figure():
     return numbers["figure"]+1
+REFERENCES={
+ "hrv":"Heart rate variability: standards of measurement, physiological interpretation and clinical use / Task Force of the European Society of Cardiology and the North American Society of Pacing and Electrophysiology // Circulation. – 1996. – Vol. 93, № 5. – P. 1043–1065. – DOI 10.1161/01.CIR.93.5.1043.",
+ "qrs":"Pan J., Tompkins W. J. A real-time QRS detection algorithm // IEEE Transactions on Biomedical Engineering. – 1985. – Vol. BME-32, № 3. – P. 230–236. – DOI 10.1109/TBME.1985.325532.",
+ "welch":"Welch P. D. The use of fast Fourier transform for the estimation of power spectra: a method based on time averaging over short, modified periodograms // IEEE Transactions on Audio and Electroacoustics. – 1967. – Vol. 15, № 2. – P. 70–73. – DOI 10.1109/TAU.1967.1161901.",
+ "mediapipe":"MediaPipe Face Landmarker, Pose Landmarker : документация / Google. – URL: https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker.",
+ "pos":"Wang W., den Brinker A. C., Stuijk S., de Haan G. Algorithmic principles of remote PPG // IEEE Transactions on Biomedical Engineering. – 2017. – Vol. 64, № 7. – P. 1479–1491. – DOI 10.1109/TBME.2016.2609282.",
+ "whisper":"Radford A., Kim J. W., Xu T. [et al.] Robust speech recognition via large-scale weak supervision // Proceedings of the 40th International Conference on Machine Learning. – 2023. – P. 28492–28518.",
+ "faster_whisper":"faster-whisper : программная библиотека / SYSTRAN. – URL: https://github.com/SYSTRAN/faster-whisper.",
+ "silero":"Silero VAD : pre-trained voice activity detector / Silero Team. – URL: https://github.com/snakers4/silero-vad.",
+ "parselmouth":"Jadoul Y., Thompson B., de Boer B. Introducing Parselmouth: a Python interface to Praat // Journal of Phonetics. – 2018. – Vol. 71. – P. 1–15. – DOI 10.1016/j.wocn.2018.07.001.",
+ "wespeaker":"Wang H., Liang C., Wang S. [et al.] WeSpeaker: a research and production oriented speaker embedding learning toolkit // ICASSP 2023 – IEEE International Conference on Acoustics, Speech and Signal Processing. – 2023. – P. 1–5. – DOI 10.1109/ICASSP49357.2023.10096626.",
+ "lopo":"Cross-validation: evaluating estimator performance. LeaveOneGroupOut : документация scikit-learn. – URL: https://scikit-learn.org/stable/modules/cross_validation.html.",
+ "brier":"Brier G. W. Verification of forecasts expressed in terms of probability // Monthly Weather Review. – 1950. – Vol. 78, № 1. – P. 1–3. – DOI 10.1175/1520-0493(1950)078<0001:VOFEIT>2.0.CO;2.",
+ "holm":"Holm S. A simple sequentially rejective multiple test procedure // Scandinavian Journal of Statistics. – 1979. – Vol. 6, № 2. – P. 65–70.",
+ "permutation":"scipy.stats.permutation_test : документация SciPy. – URL: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.permutation_test.html.",
+}
+cited=[]
+def cite(*keys):
+    for key in keys:
+        if key not in cited:cited.append(key)
+    return "["+", ".join(str(cited.index(key)+1) for key in keys)+"]"
 def link(url):
     return f'<a href="{escape(url)}" color="{BLUE}">{escape(url)}</a>'
 def table(caption,headers,rows,widths):
@@ -107,8 +128,9 @@ def table(caption,headers,rows,widths):
     ]))
     t.spaceAfter=10;story.append(t)
     return numbers["table"]
-def figure(path,caption,max_height=None):
+def figure(path,caption,max_height=None,intro=None):
     if not path.exists():return
+    if intro:add(intro.format(n=next_figure()))
     im=Image(str(path));scale=495/im.imageWidth
     if max_height:scale=min(scale,max_height/im.imageHeight)
     im.drawWidth=im.imageWidth*scale;im.drawHeight=im.imageHeight*scale
@@ -290,12 +312,13 @@ sync_table=table("Автоматические оценки смещения Б�
 story.append(PageBreak())
 heading("Биосигналы БиоРадио")
 subheading("ЭКГ, ВСР и дыхание")
-add("Файлы BCRX декодированы в численные ряды. Частоты дискретизации, единицы и коэффициенты прочитаны из заголовков. После фильтрации ЭКГ найдены R-зубцы, проверены RR-интервалы и рассчитаны ЧСС, SDNN, RMSSD, pNN50, VLF, LF, HF и LF/HF [1].")
-add("Окно ВСР — 120 с, шаг — 5 с. Окна с разрывами или нестабильными RR исключены из итоговых оценок. Диапазоны спектра: VLF 0,0033–0,04 Гц, LF 0,04–0,15 Гц, HF 0,15–0,4 Гц; общая мощность — сумма трёх диапазонов. ULF в окне 120 с не рассчитывается. Дыхательный пояс RIP обработан отдельно; EDR рассчитан по колебаниям амплитуды ЭКГ.")
+add("Файлы BCRX декодированы в численные ряды. Частоты дискретизации, единицы и коэффициенты прочитаны из заголовков.")
+add(f"R-зубцы найдены детектором по энергии комплекса QRS {cite('qrs')}: полосовой фильтр 5–25 Гц, скользящее среднее квадрата сигнала 60 мс, адаптивный порог 25 % от 95-го процентиля энергии в блоках 30 с, минимальный интервал между зубцами 300 мс. RR-интервал отклоняется, если он вне 300–2000 мс или отличается более чем на 20 % от медианы 11 соседних интервалов.")
+add(f"По принятым RR рассчитаны ЧСС, SDNN, RMSSD, pNN50, VLF, LF, HF и LF/HF {cite('hrv')}. Спектр — метод Уэлча {cite('welch')} по тахограмме, интерполированной с частотой 4 Гц, окно Ханна. Окно ВСР — 120 с, шаг — 5 с. Окна с разрывами или нестабильными RR исключены из итоговых оценок. Диапазоны спектра: VLF 0,0033–0,04 Гц, LF 0,04–0,15 Гц, HF 0,15–0,4 Гц; общая мощность — сумма трёх диапазонов. ULF в окне 120 с не рассчитывается. Дыхательный пояс RIP обработан отдельно; EDR рассчитан по колебаниям амплитуды ЭКГ.")
 table("Окна ВСР и контроль качества ЭКГ",["Участник","Окон","Прошли контроль","Медиана ЧСС, уд/мин"],[
  [f"P{i+1:02}",str(by_bio.get(pid,{}).get("window_count","—")),str(by_bio.get(pid,{}).get("usable_ecg_windows","—")),num(by_bio.get(pid,{}).get("median_hr_bpm"))]
  for i,pid in enumerate(order)],[80,110,145,160])
-figure(OUT/"bio/aggregate_summary.png","Качество ЭКГ и описательные показатели по участникам")
+figure(OUT/"bio/aggregate_summary.png","Качество ЭКГ и описательные показатели по участникам",intro="Доля пригодных окон и распределения показателей ЭКГ приведены на рисунке {n}.")
 add(f"В {gsr_review_count} из {len(bio)} записей GSR обнаружены плоские участки или значения вне рабочего диапазона. Эти данные сохранены с отметкой качества.")
 if ppg_records:
     subheading("Контактный ФПГ и ЭКГ")
@@ -308,14 +331,14 @@ if ppg_records:
     for b in ppg_records:
         c=b.get("ecg_ppg_comparison",{})
         add(f"{names.get(b['subject_id'],b['subject_id'])}: средняя разность ЧСС ФПГ − ЭКГ составляет {num(c.get('hr_bias_ppg_minus_ecg_bpm'),2)} уд/мин. Средняя абсолютная разность RMSSD — {num(c.get('rmssd_mae_ms'),2)} мс, SDNN — {num(c.get('sdnn_mae_ms'),2)} мс. В сравнение включены окна, прошедшие контроль обоих каналов.")
-        figure(OUT/"bio"/b["subject_id"]/"ecg_ppg_comparison.png","Контактный ФПГ, R-зубцы ЭКГ и сравнение частоты пульса на общей шкале прибора")
+        figure(OUT/"bio"/b["subject_id"]/"ecg_ppg_comparison.png","Контактный ФПГ, R-зубцы ЭКГ и сравнение частоты пульса на общей шкале прибора",intro="Фрагмент сигналов и ЧСС по окнам показаны на рисунке {n}.")
 else:
     add("Контактный ФПГ в исходных записях отсутствует; пульс по видео сопоставлен с ЭКГ.")
 story.append(PageBreak())
 heading("Видеоаналитика")
 subheading("Лицевые области, видеопульс и дыхание")
-add("По точкам позы выделена область головы, затем Face Landmarker определил лицевые ориентиры [5]. Для rPPG использованы лоб и щёки. Рот и глаза отслежены отдельно. Размер кадра, частота и соотношение сторон сохранены для каждой записи.")
-add("Видеопульс рассчитан методом POS [2], с фильтрацией 0,7–3,5 Гц. Частота оценена в окнах по 30 с с шагом 5 с. Спектральная концентрация использована для отбора окон. По положению головы, плеч, кистей, таза и видимых стоп рассчитаны двумерные координаты, скорости и углы; по колебаниям плеч — частота дыхательного движения.")
+add(f"По точкам позы выделена область головы, затем Face Landmarker определил лицевые ориентиры {cite('mediapipe')}. Для rPPG использованы лоб и щёки. Рот и глаза отслежены отдельно. Размер кадра, частота и соотношение сторон сохранены для каждой записи.")
+add(f"Видеопульс рассчитан методом POS {cite('pos')}, с фильтрацией 0,7–3,5 Гц. Частота оценена в окнах по 30 с с шагом 5 с. Спектральная концентрация использована для отбора окон. По положению головы, плеч, кистей, таза и видимых стоп рассчитаны двумерные координаты, скорости и углы; по колебаниям плеч — частота дыхательного движения.")
 rows=[]
 for i,pid in enumerate(order):
     v=by_video.get(pid,{})
@@ -325,12 +348,12 @@ for i,pid in enumerate(order):
        num(c.get("hr_mae_bpm"),2),f"{num(c.get('resp_mae_bpm'),2)} (n={c.get('resp_paired_windows',0)})"])
 table("Покрытие лица, видеопульс и дыхательное движение",["Участник","Кадры с ROI","Окна: всего / ЧСС / пары ЭКГ","MAE ЧСС, уд/мин","MAE дыхания, /мин"],rows,[60,85,140,95,115])
 add(f"MAE — средняя абсолютная разность частот: видеопульс сопоставлен с ЭКГ, движение плеч — с RIP. Использованы автоматические смещения из таблицы {sync_table} и окна с допустимым качеством; n — число пар дыхательных оценок.","SmallRu")
-figure(OUT/"audit/video_quality.png","Доля кадров с лицевыми областями и доля окон с рассчитанной ЧСС rPPG")
+figure(OUT/"audit/video_quality.png","Доля кадров с лицевыми областями и доля окон с рассчитанной ЧСС rPPG",intro="Покрытие лицевыми областями и доля окон с оценкой ЧСС по записям показаны на рисунке {n}.")
 story.append(PageBreak())
 heading("Речевой анализ")
 subheading("Распознавание речи и проверка стенограмм")
 models_used=", ".join(sorted({str(a.get("model","Whisper")) for a in audios}))
-add(f"Расшифровка получена моделью {models_used} через faster-whisper [6]. При вычитке проверены отрицания, короткие ответы и вопросы; сохранены временные метки слов и сегментов.")
+add(f"Расшифровка получена моделью {models_used} {cite('whisper')} через faster-whisper {cite('faster_whisper')}; речевые интервалы выделены Silero VAD {cite('silero')}. При вычитке проверены отрицания, короткие ответы и вопросы; сохранены временные метки слов и сегментов.")
 if editorial:
     add("Назначены роли интервьюера и респондента, объединены разорванные фразы, исправлены очевидные ошибки текста. Исходные варианты сохранены в журнале правок.")
     table("Редакторская проверка стенограмм",["Проверка","Результат"],[[label,str(editorial[key])] for key,label in [
@@ -354,7 +377,7 @@ elif asr_validation:
     for example in selected or examples[:3]:
         pid=example.get("participant_id") or example.get("recording_id","").split("_",1)[-1]
         add(f"{names.get(pid,pid)} · {timecode(example.get('start_s'))}: «{trim(example.get('before',''),100)}» → «{trim(example.get('after',''),150)}».","SmallRu")
-add("По аудиодорожкам извлечены основной тон и его изменчивость, энергия, паузы, доля звучащей речи, спектральный центр, наклон и форманты. Для пар «вопрос – ответ» рассчитаны задержка и длительность ответа, темп в словах/мин и оценка слогов/с по числу гласных. Для начального разделения голосов использованы представления WeSpeaker.")
+add(f"По аудиодорожкам извлечены основной тон и его изменчивость, энергия, паузы, доля звучащей речи, спектральный центр, наклон и форманты; основной тон и форманты рассчитаны Praat через Parselmouth {cite('parselmouth')}. Для пар «вопрос – ответ» рассчитаны задержка и длительность ответа, темп в словах/мин и оценка слогов/с по числу гласных. Для начального разделения голосов использованы представления WeSpeaker ResNet34 {cite('wespeaker')} и кластеризация KMeans на два диктора.")
 story.append(PageBreak())
 heading("Разметка ответов")
 subheading("Сопоставление с письменным эталоном")
@@ -383,7 +406,7 @@ feature_counts={key:sum(num(row.get(key))!="н/д" for row in trial_features) fo
     "audio_pitch_median_hz", "video_head_speed_norm_per_s", "video_mouth_motion_ratio_per_s",
     "bio_ecg_hr_bpm_context120s", "bio_rip_rate_bpm_context120s"]}
 add(f"Для проверки моделей отобраны {dataset['trials']} полных ответов с метками по письменному эталону: соответствий — {dataset['agreements']}, несоответствий — {dataset['contradictions']}. Оба класса представлены у всех {dataset['participants']} участников. Единица анализа — один ответ; при нескольких проверяемых утверждениях достаточно одного несоответствия для метки 1.")
-add("Проверка LOPO каждый раз исключает из обучения целиком одного участника [3]. Заполнение пропусков и масштабирование обучаются только на остальных. L2-логистическая регрессия: C = 0,1, порог 0,5, без подбора параметров. Участники имеют равный вес при обучении и расчёте метрик.","SmallRu")
+add(f"Проверка LOPO каждый раз исключает из обучения целиком одного участника {cite('lopo')}. Заполнение пропусков и масштабирование обучаются только на остальных. L2-логистическая регрессия: C = 0,1, порог 0,5, без подбора параметров. Участники имеют равный вес при обучении и расчёте метрик.","SmallRu")
 add("Речевые признаки: основной тон, его разброс, уровень сигнала, темп и доля пауз. Видеопризнаки: скорость головы, движение торса, раскрытие глаз и движение рта. БиоРадио: ЧСС, RMSSD ЭКГ и частота RIP в 120-секундном контексте ответа.","SmallRu")
 add(f"До заполнения пропусков основной тон доступен для {feature_counts['audio_pitch_median_hz']} ответов, движение головы — для {feature_counts['video_head_speed_norm_per_s']}, рта — для {feature_counts['video_mouth_motion_ratio_per_s']}, ЧСС ЭКГ — для {feature_counts['bio_ecg_hr_bpm_context120s']}, частота RIP — для {feature_counts['bio_rip_rate_bpm_context120s']}.","SmallRu")
 add("Профили включают выраженность, Эмоц+, Эмоц− и отдельные признаки наличия компонентов естественного и демонстрируемого типа. Эмоциональный баланс используется в корреляциях. Имена, ИСУ и тексты вопросов и эталонов в признаки моделей не входят.","SmallRu")
@@ -392,13 +415,13 @@ table("Качество моделей при проверке LOPO",["Моде�
   f"[{num(row['metrics'].get('brier_ci_low'),3)}; {num(row['metrics'].get('brier_ci_high'),3)}]",
   num(row["metrics"].get("balanced_accuracy"),3),num(row["metrics"].get("roc_auc"),3)]
  for row in model_rows],[185,50,100,85,75])
-add(f"Brier — средняя квадратичная ошибка вероятности; меньше лучше. Сбалансированная точность — среднее чувствительности и специфичности; ROC AUC — качество ранжирования ответов. Для последних двух метрик случайный уровень равен 0,5. 95 % ДИ рассчитаны bootstrap по участникам ({increment.get('bootstrap',5000)} повторов) при фиксированных прогнозах LOPO, без повторного обучения.","SmallRu")
+add(f"Brier {cite('brier')} — средняя квадратичная ошибка вероятности; меньше лучше. Сбалансированная точность — среднее чувствительности и специфичности; ROC AUC — качество ранжирования ответов. Для последних двух метрик случайный уровень равен 0,5. 95 % ДИ рассчитаны bootstrap по участникам ({increment.get('bootstrap',5000)} повторов) при фиксированных прогнозах LOPO, без повторного обучения.","SmallRu")
 add(f"Среди проверенных наборов наименьшая ошибка у видеопризнаков: Brier {num(model_metrics['video']['brier'],3)} против {num(model_metrics['prior']['brier'],3)} у прогноза по доле классов. Однако ROC AUC = {num(model_metrics['video']['roc_auc'],3)}, а сбалансированная точность = {percent(model_metrics['video']['balanced_accuracy'])}: разделение ответов осталось около случайного уровня.","SmallRu")
 
 subheading("Вклад профилей и биосигналов")
 fig=OUT/"research/multimodal/model_comparison.png"
 if not fig.exists():raise SystemExit(f"Missing analysis figure: {fig}")
-figure(fig,"Ошибка на исключённых участниках и изменение при добавлении профилей. Ромбы показывают средние; отдельные точки отражают участников")
+figure(fig,"Ошибка на исключённых участниках и изменение при добавлении профилей. Ромбы показывают средние; отдельные точки отражают участников",intro="Ошибка моделей по участникам и изменение ошибки при добавлении профилей показаны на рисунке {n}.")
 add(f"Добавление профилей к видео и речи изменило Brier на {num(increment['delta_brier'],4)}; 95 % ДИ [{num(increment['ci_low'],4)}; {num(increment['ci_high'],4)}]. Положительная разность означает рост ошибки. Интервал включает ноль; преимущество профилей не установлено.","SmallRu")
 classified=model_metrics['av_profiles']['confusion_counts']
 add(f"Модель «видео + речь + профили» обнаружила {classified['tp']} из {dataset['contradictions']} {plural(dataset['contradictions'],'несоответствия','несоответствий','несоответствий')}, пропустила {classified['fn']} и дала {counted(classified['fp'],'ложное срабатывание','ложных срабатывания','ложных срабатываний')}. Добавление БиоРадио снизило Brier с {num(model_metrics['av']['brier'],3)} до {num(model_metrics['fusion']['brier'],3)}, но ROC AUC осталось {num(model_metrics['fusion']['roc_auc'],3)}. Объединение каналов не обеспечило распознавания.","SmallRu")
@@ -413,18 +436,18 @@ subheading("Связи профилей с измерениями")
 families=multimodal["association_families"]
 associations=multimodal["associations"]
 estimated=sum(row.get("rho") is not None for row in associations)
-add(f"Сопоставлены профили и показатели за всю запись. Единица анализа — участник, n = {dataset['participants']}. Заданы {families['primary']} основных сочетаний (выраженность и эмоциональный баланс с 6 признаками) и {families['secondary']} дополнительных. Коэффициент Спирмена, точные двусторонние перестановки рангов, поправка Холма отдельно в каждом семействе; 95 % ДИ — парный bootstrap участников [4].","SmallRu")
+add(f"Сопоставлены профили и показатели за всю запись. Единица анализа — участник, n = {dataset['participants']}. Заданы {families['primary']} основных сочетаний (выраженность и эмоциональный баланс с 6 признаками) и {families['secondary']} дополнительных. Коэффициент Спирмена, точные двусторонние перестановки рангов, поправка Холма {cite('holm')} отдельно в каждом семействе; 95 % ДИ — парный bootstrap участников {cite('permutation')}.","SmallRu")
 add(f"Рассчитаны {estimated} из {len(associations)} сочетаний; остальные не набрали минимум 6 пригодных участников или вариативных значений. Для ЭКГ, RIP и rPPG требуется не менее 20 % пригодных окон записи. После поправки Холма статистически значимых связей не обнаружено (p < 0,05).","SmallRu")
 fig=OUT/"research/multimodal/associations.png"
 if not fig.exists():raise SystemExit(f"Missing analysis figure: {fig}")
-figure(fig,f"Все {families['primary']} основных сочетаний. Одна точка соответствует одному участнику; подписи содержат n, коэффициент Спирмена и p Холма",max_height=540)
+figure(fig,f"Все {families['primary']} основных сочетаний. Одна точка соответствует одному участнику; подписи содержат n, коэффициент Спирмена и p Холма",max_height=540,intro="Все основные сочетания показаны на рисунке {n}.")
 head_association=next(row for row in associations if row['profile']=='expression' and row['feature']=='video_head_speed_norm_per_s')
 add(f"Самая сильная по модулю связь в основном семействе — выраженность профиля и скорость головы: ρ = {num(head_association['rho'],3)}, p Холма = {num(head_association['p_holm'],3)}. Более высокой выраженности соответствовала меньшая скорость движения головы; связь не достигла статистической значимости. Здесь сравниваются различия между участниками за всю запись; связь этого признака с меткой ответа отдельно не установлена.","SmallRu")
 
 story.append(PageBreak())
 heading("Интерфейс и архитектура")
 add("Локальное приложение объединяет пять зон: временную шкалу; стенограмму и истории; биосигналы; видео с областями лица и позой; спектр ВСР и численные признаки. Переход по цитате открывает нужный фрагмент с вопросом. Разметка и смещение сохраняются в JSON.")
-figure(OUT/"report/interface.png","Интерфейс просмотра и сопоставления записей",max_height=340)
+figure(OUT/"report/interface.png","Интерфейс просмотра и сопоставления записей",max_height=340,intro="Окно приложения показано на рисунке {n}.")
 add("Запуск: start.cmd. Установка для Windows/Linux/macOS и запуск через Docker описаны в README.")
 story.append(Paragraph("Исходный код, тесты и конфигурация GitHub Actions: "+link(args.repository)+".",styles["TextRu"]))
 story.append(PageBreak())
@@ -436,14 +459,8 @@ add("Сравнение контактных каналов показало б�
 
 story.append(PageBreak())
 heading("Список использованных источников",numbered=False)
-for ref in [
- "[1] Task Force of ESC and NASPE. Heart rate variability. Circulation, 1996, 93:1043–1065. https://doi.org/10.1161/01.CIR.93.5.1043",
- "[2] Wang W. et al. Algorithmic Principles of Remote PPG. IEEE TBME, 2017, 64(7):1479–1491. https://doi.org/10.1109/TBME.2016.2609282",
- "[3] Scikit-learn. Grouped cross-validation, LeaveOneGroupOut. https://scikit-learn.org/stable/modules/cross_validation.html",
- "[4] SciPy. scipy.stats.permutation_test. https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.permutation_test.html",
- "[5] Google MediaPipe. Face Landmarker and Pose Landmarker. https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker",
- "[6] SYSTRAN. faster-whisper. https://github.com/SYSTRAN/faster-whisper",
-]:add(ref,"SmallRu")
+for i,key in enumerate(cited,1):
+    add(f"{i}. {REFERENCES[key]}","SmallRu")
 
 story.append(PageBreak())
 heading("Приложение А. Результаты сверки историй по участникам",numbered=False)
