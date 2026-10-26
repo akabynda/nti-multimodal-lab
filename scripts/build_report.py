@@ -60,7 +60,7 @@ styles.add(ParagraphStyle("Sub",fontName="BodyBold",fontSize=11,leading=15,space
 styles.add(ParagraphStyle("TextRu",fontName="Body",fontSize=10,leading=14,spaceAfter=8))
 styles.add(ParagraphStyle("SmallRu",fontName="Body",fontSize=8.4,leading=11,spaceAfter=6))
 styles.add(ParagraphStyle("CellRu",fontName="Body",fontSize=8.2,leading=11,spaceAfter=0))
-styles.add(ParagraphStyle("HeaderCellRu",parent=styles["CellRu"],textColor=colors.HexColor(WHITE)))
+styles.add(ParagraphStyle("HeaderCellRu",parent=styles["CellRu"],fontName="BodyBold",textColor=colors.HexColor(WHITE)))
 styles.add(ParagraphStyle("TableCaption",fontName="Body",fontSize=9,leading=12,spaceBefore=4,spaceAfter=4,keepWithNext=True))
 styles.add(ParagraphStyle("FigureCaption",fontName="Body",fontSize=9,leading=12,spaceBefore=4,spaceAfter=10,alignment=TA_CENTER))
 story=[]
