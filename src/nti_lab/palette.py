@@ -27,3 +27,17 @@ PLOT_STYLE = {
     "axes.facecolor": WHITE,
     "savefig.facecolor": WHITE,
 }
+
+
+def decimal_comma(fig):
+    """Use decimal commas in numeric tick labels of all axes of a matplotlib figure."""
+    from matplotlib.ticker import ScalarFormatter
+
+    class CommaFormatter(ScalarFormatter):
+        def __call__(self, x, pos=None):
+            return super().__call__(x, pos).replace(".", ",")
+
+    for ax in fig.axes:
+        for axis in (ax.xaxis, ax.yaxis):
+            if type(axis.get_major_formatter()) is ScalarFormatter:
+                axis.set_major_formatter(CommaFormatter())

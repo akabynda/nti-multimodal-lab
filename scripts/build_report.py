@@ -25,6 +25,8 @@ from nti_lab.palette import BLUE, INK, MUTED, LINE, SURFACE, WHITE
 from nti_lab.story_topics import story_topic_title
 from nti_lab.multimodal_analysis import TYPE_CORRECTIONS
 from nti_lab import session_summary as summary_lib
+from nti_lab import report_figures
+import numpy as np
 
 TITLE="Мультимодальное распознавание лжи на основе синхронного анализа видеоряда, аудиопотока и БОС"
 ROOT=Path(__file__).resolve().parents[1]
@@ -132,12 +134,12 @@ def table(caption,headers,rows,widths):
     return numbers["table"]
 def figure(path,caption,max_height=None,intro=None):
     if not path.exists():return
-    if intro:add(intro.format(n=next_figure()))
     im=Image(str(path));scale=495/im.imageWidth
     if max_height:scale=min(scale,max_height/im.imageHeight)
     im.drawWidth=im.imageWidth*scale;im.drawHeight=im.imageHeight*scale
     numbers["figure"]+=1
-    story.append(KeepTogether([im,p(f"Рисунок {numbers['figure']} – {caption}","FigureCaption")]))
+    lead=[p(intro.format(n=numbers["figure"]))] if intro else []
+    story.append(KeepTogether(lead+[im,p(f"Рисунок {numbers['figure']} – {caption}","FigureCaption")]))
     return numbers["figure"]
 def model_name(name):
     return name.replace("BioRadio","БиоРадио").replace("анкета","профили")
@@ -346,6 +348,21 @@ sync_table=table("Автоматические оценки смещения Б�
  num((by_alignment.get(pid,{}).get("joint_support") or {}).get("margin"),3),
  num(by_alignment.get(pid,{}).get("bio_to_video_offset_s",(by_alignment.get(pid,{}).get("candidate") or {}).get("bio_to_video_offset_s")),2)]
  for pid in order],[125,120,85,60,45,60])
+FIGURES=OUT/"report/figures"
+codes={pid:f"P{i+1:02}" for i,pid in enumerate(order)}
+report_figures.sync_curves([(codes[pid],by_alignment[pid]) for pid in order if pid in by_alignment],FIGURES/"sync_curves.png")
+figure(FIGURES/"sync_curves.png","Модуль коэффициента корреляции на начальном и конечном фоне и общая оценка в зависимости от опережения БиоРадио",max_height=520,
+       intro="Кривые оценок по всему допустимому диапазону опережения показаны на рисунке {n}. Пунктир — принятое опережение (максимум общей оценки).")
+supported=[pid for pid in order if by_alignment.get(pid,{}).get("status")=="supported_unverified"]
+example=max(supported,key=lambda pid:by_alignment[pid]["joint_support"]["best_score"]) if supported else None
+if example and summaries[example]["stages"]["neutral_answers"] and (OUT/"bio"/example/"signals.npz").exists():
+    answer=summaries[example]["stages"]["neutral_answers"][0]
+    window=(answer["answer_start_s"]-10,answer["answer_start_s"]+20)
+    audio=next(a for a in audios if a["participant_id"]==example)
+    report_figures.synchronized_signals(turns=audio.get("turns",[]),video=by_video[example],bio=dict(np.load(OUT/"bio"/example/"signals.npz")),
+        lead_s=by_alignment[example]["joint_support"]["best_lead_s"],start_s=window[0],end_s=window[1],path=FIGURES/"synchronized_signals.png")
+    figure(FIGURES/"synchronized_signals.png",f"Синхронные реплики, ЭКГ, rPPG и дыхание RIP, {codes[example]}, {num(window[0],0)}–{num(window[1],0)} с видео",max_height=440,
+           intro=f"Пример сведения модальностей на одной оси времени видео ({codes[example]}, наибольшая общая оценка среди однозначных максимумов) показан на рисунке {{n}}. Биосигналы переведены по формуле tвидео = tБОС − опережение.")
 story.append(PageBreak())
 heading("Биосигналы БиоРадио")
 subheading("ЭКГ, ВСР и дыхание")
@@ -393,6 +410,11 @@ for i,pid in enumerate(order):
        num(c.get("hr_mae_bpm"),2),f"{num(c.get('resp_mae_bpm'),2)} (n={c.get('resp_paired_windows',0)})"])
 table("Покрытие лица, видеопульс и дыхательное движение",["Участник","Кадры с ROI","Окна: всего / ЧСС / пары ЭКГ","MAE ЧСС, уд/мин","MAE дыхания, /мин"],rows,[60,85,140,95,115])
 add(f"MAE — средняя абсолютная разность частот: видеопульс сопоставлен с ЭКГ, движение плеч — с RIP. Использованы автоматические смещения из таблицы {sync_table} и окна с допустимым качеством; n — число пар дыхательных оценок.","SmallRu")
+agreement=report_figures.bland_altman([(codes[a["participant_id"]],pd.read_csv(OUT/"sync"/f"{a['recording_id']}.comparisons.csv"))
+    for a in audios if (OUT/"sync"/f"{a['recording_id']}.comparisons.csv").exists()],FIGURES/"rppg_bland_altman.png")
+if agreement["pairs"]:
+    figure(FIGURES/"rppg_bland_altman.png","Согласие ЧСС rPPG и ЭКГ по окнам 30 с (метод Бланда — Альтмана). Сплошная линия — средняя разность, пунктир — ±1,96 SD",max_height=300,
+           intro=f"По {counted(agreement['pairs'],'паре','парам','парам')} окон средняя разность ЧСС rPPG − ЭКГ составила {num(agreement['bias_bpm'],2)} уд/мин, пределы согласия ±1,96 SD — от {num(agreement['low_bpm'],1)} до {num(agreement['high_bpm'],1)} уд/мин; разность не более 5 уд/мин — в {percent(agreement['within_5_bpm'])} окон (рисунок {{n}}). Окна перекрываются с шагом 5 с и не являются независимыми.")
 figure(OUT/"audit/video_quality.png","Доля кадров с лицевыми областями и доля окон с рассчитанной ЧСС rPPG",intro="Покрытие лицевыми областями и доля окон с оценкой ЧСС по записям показаны на рисунке {n}.")
 subheading("Кинематика тела, головы и конечностей")
 add(f"Точки тела получены MediaPipe Pose Landmarker {cite('mediapipe')} с частотой до 5 Гц, лицевые ориентиры — с частотой анализа 12,5 Гц. Точка учитывается при видимости > 0,6. Часть тела без видимых точек пропускается; расчёт остальных показателей продолжается. Координаты нормированы на размер кадра.")
@@ -582,6 +604,7 @@ table("Файлы результатов",["Путь в проекте","Сод�
  ["outputs/research/multimodal/participant_features.csv","Показатели участников за всю запись"],
  ["outputs/research/multimodal/trial_features.csv","Показатели отдельных ответов"],
  ["outputs/research/multimodal/model_predictions.csv","Прогнозы LOPO для воспроизведения оценок"],
+ ["outputs/report/figures/","Рисунки синхронизации, согласия rPPG и ЭКГ и синхронных сигналов"],
  ["outputs/report/session_summary.csv","Сводные показатели ВСР, речи и кинематики по записям (таблицы раздела 1.4, 3–5)"],
  ["outputs/audio/","Стенограммы, временные метки, акустические признаки"],
  ["outputs/bio/","ЭКГ, ФПГ, RIP, GSR, интервалы и показатели ВСР"],
