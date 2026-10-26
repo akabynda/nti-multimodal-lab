@@ -17,7 +17,7 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.lib.pagesizes import A4
 from nti_lab.palette import BLUE, INK, MUTED, LINE, SURFACE, WHITE
 from nti_lab.story_topics import story_topic_title
@@ -26,6 +26,7 @@ ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/"outputs"
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output",type=Path,default=OUT/"report"/"Отчет НТИ.pdf")
+parser.add_argument("--repository",default="https://github.com/akabynda/nti-multimodal-lab")
 args=parser.parse_args()
 
 def read(p,default=None):
@@ -50,7 +51,10 @@ styles=getSampleStyleSheet()
 for name in styles.byName:
     styles[name].fontName="Body"
     styles[name].textColor=colors.HexColor(INK)
-styles.add(ParagraphStyle("ReportTitle",fontName="BodyBold",fontSize=24,leading=30,spaceAfter=18,textColor=colors.HexColor(BLUE)))
+styles.add(ParagraphStyle("CoverOrg",fontName="BodyBold",fontSize=13,leading=18,alignment=TA_CENTER))
+styles.add(ParagraphStyle("ReportTitle",fontName="BodyBold",fontSize=24,leading=30,spaceAfter=12,alignment=TA_CENTER,textColor=colors.HexColor(BLUE)))
+styles.add(ParagraphStyle("CoverSubtitle",fontName="BodyBold",fontSize=15,leading=20,alignment=TA_CENTER,textColor=colors.HexColor(BLUE)))
+styles.add(ParagraphStyle("CoverText",fontName="Body",fontSize=11,leading=16,alignment=TA_CENTER))
 styles.add(ParagraphStyle("Section",fontName="BodyBold",fontSize=15,leading=20,spaceBefore=14,spaceAfter=10,keepWithNext=True,textColor=colors.HexColor(BLUE)))
 styles.add(ParagraphStyle("Sub",fontName="BodyBold",fontSize=11,leading=15,spaceBefore=10,spaceAfter=5,keepWithNext=True))
 styles.add(ParagraphStyle("TextRu",fontName="Body",fontSize=10,leading=14,spaceAfter=8))
@@ -64,6 +68,8 @@ def add(text,style="TextRu"):
     story.append(p(text,style))
 def heading(text):
     add(text,"Section")
+def link(url):
+    return f'<a href="{escape(url)}" color="{BLUE}">{escape(url)}</a>'
 def table(headers,rows,widths):
     cells=[[p(x,"HeaderCellRu") for x in headers]]+[[p(x,"CellRu") for x in row] for row in rows]
     t=Table(cells,colWidths=widths,repeatRows=1,hAlign="LEFT")
@@ -122,8 +128,24 @@ relation={"consistent":"Согласуется с эталоном","different":
 counts=Counter(n["relation"] for n in notes)
 asr_validation=read(OUT/"audio/validation_summary.json",{})
 
+def surname_first(name):
+    given,_,family=name.partition(" ")
+    return f"{family} {given}" if family else name
+authors=sorted([surname_first(private_names[pid]),by_profile.get(pid,{}).get("tab_number") or "н/д"]
+               for pid in order if pid in private_names)
+add("Университет ИТМО","CoverOrg")
+story.append(Spacer(1,200))
 add("Лабораторная работа НТИ","ReportTitle")
-add("Анализ видео, речи и биосигналов","Section")
+add("Анализ видео, речи и биосигналов","CoverSubtitle")
+story.append(Spacer(1,110))
+if authors:
+    cover=Table([[p("Выполнили:","Sub"),""]]+[[p(name),p(f"ИСУ {isu}")] for name,isu in authors],
+                colWidths=[170,90],hAlign="RIGHT")
+    cover.setStyle(TableStyle([("LEFTPADDING",(0,0),(-1,-1),0),("TOPPADDING",(0,0),(-1,-1),0),("BOTTOMPADDING",(0,0),(-1,-1),3)]))
+    story.append(cover)
+story.append(Spacer(1,140))
+story.append(Paragraph("Репозиторий проекта: "+link(args.repository),styles["CoverText"]))
+story.append(PageBreak())
 heading("Задача")
 add("Разработать комплекс синхронного анализа видео, речи и биосигналов и проверить возможность распознавания лжи с учётом профилей участников. В эксперименте участники намеренно изменяли часть ответов. Письменные истории служат правдивым эталоном для разметки.")
 add(f"Обработано {len(audios)} записей общей продолжительностью {sum(a.get('duration_s',0) for a in audios)/60:.2f} мин. Сверено {review.get('stories_reviewed',len(sources))} историй. Подготовлены стенограммы с временными метками, показатели речи, ЭКГ и дыхания, видеопульс, кинематика и локальный интерфейс для просмотра результатов.")
@@ -359,7 +381,8 @@ if interface_path.exists():
     im=Image(str(interface_path));scale=min(495/im.imageWidth,340/im.imageHeight)
     im.drawWidth=im.imageWidth*scale;im.drawHeight=im.imageHeight*scale;story.append(im)
     add(f"Рисунок {6 if ppg_records else 5}. Интерфейс просмотра и сопоставления записей.","SmallRu")
-add("Запуск: start.cmd. Установка для Windows/Linux/macOS и запуск через Docker описаны в README. Исходный код, тесты и конфигурация GitHub Actions входят в репозиторий.")
+add("Запуск: start.cmd. Установка для Windows/Linux/macOS и запуск через Docker описаны в README.")
+story.append(Paragraph("Исходный код, тесты и конфигурация GitHub Actions: "+link(args.repository)+".",styles["TextRu"]))
 story.append(PageBreak())
 heading("Источники")
 for ref in [
@@ -399,6 +422,7 @@ def footer(c,doc):
 path=args.output
 path.parent.mkdir(parents=True,exist_ok=True)
 doc=SimpleDocTemplate(str(path),pagesize=A4,rightMargin=50,leftMargin=50,topMargin=42,bottomMargin=45,
-                     title="Лабораторная работа НТИ. Анализ видео, речи и биосигналов",author="")
-doc.build(story,onFirstPage=footer,onLaterPages=footer)
+                     title="Лабораторная работа НТИ. Анализ видео, речи и биосигналов",
+                     author=", ".join(name for name,_ in authors))
+doc.build(story,onFirstPage=lambda c,doc:None,onLaterPages=footer)
 print(path)
