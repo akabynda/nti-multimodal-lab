@@ -61,7 +61,10 @@ styles.add(ParagraphStyle("TextRu",fontName="Body",fontSize=10,leading=14,spaceA
 styles.add(ParagraphStyle("SmallRu",fontName="Body",fontSize=8.4,leading=11,spaceAfter=6))
 styles.add(ParagraphStyle("CellRu",fontName="Body",fontSize=8.2,leading=11,spaceAfter=0))
 styles.add(ParagraphStyle("HeaderCellRu",parent=styles["CellRu"],textColor=colors.HexColor(WHITE)))
+styles.add(ParagraphStyle("TableCaption",fontName="Body",fontSize=9,leading=12,spaceBefore=4,spaceAfter=4,keepWithNext=True))
+styles.add(ParagraphStyle("FigureCaption",fontName="Body",fontSize=9,leading=12,spaceBefore=4,spaceAfter=10,alignment=TA_CENTER))
 story=[]
+numbers={"table":0,"figure":0}
 def p(text,style="TextRu"):
     return Paragraph(escape(str(text)).replace("\n","<br/>"),styles[style])
 def add(text,style="TextRu"):
@@ -70,7 +73,9 @@ def heading(text):
     add(text,"Section")
 def link(url):
     return f'<a href="{escape(url)}" color="{BLUE}">{escape(url)}</a>'
-def table(headers,rows,widths):
+def table(caption,headers,rows,widths):
+    numbers["table"]+=1
+    add(f"Таблица {numbers['table']} – {caption}","TableCaption")
     cells=[[p(x,"HeaderCellRu") for x in headers]]+[[p(x,"CellRu") for x in row] for row in rows]
     t=Table(cells,colWidths=widths,repeatRows=1,hAlign="LEFT")
     t.setStyle(TableStyle([
@@ -82,7 +87,15 @@ def table(headers,rows,widths):
         ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
         ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor(SURFACE)]),
     ]))
-    story.append(t);story.append(Spacer(1,10))
+    t.spaceAfter=10;story.append(t)
+    return numbers["table"]
+def figure(path,caption,max_height=None):
+    if not path.exists():return
+    im=Image(str(path));scale=495/im.imageWidth
+    if max_height:scale=min(scale,max_height/im.imageHeight)
+    im.drawWidth=im.imageWidth*scale;im.drawHeight=im.imageHeight*scale
+    numbers["figure"]+=1
+    story.append(KeepTogether([im,p(f"Рисунок {numbers['figure']} – {caption}","FigureCaption")]))
 def timecode(t):
     if t is None:return "нет сопоставимого интервала"
     return f"{int(t//60):02d}:{t%60:05.2f}"
@@ -149,10 +162,10 @@ story.append(PageBreak())
 heading("Задача")
 add("Разработать комплекс синхронного анализа видео, речи и биосигналов и проверить возможность распознавания лжи с учётом профилей участников. В эксперименте участники намеренно изменяли часть ответов. Письменные истории служат правдивым эталоном для разметки.")
 add(f"Обработано {len(audios)} записей общей продолжительностью {sum(a.get('duration_s',0) for a in audios)/60:.2f} мин. Сверено {review.get('stories_reviewed',len(sources))} историй. Подготовлены стенограммы с временными метками, показатели речи, ЭКГ и дыхания, видеопульс, кинематика и локальный интерфейс для просмотра результатов.")
-table(["Результат сверки","Число сопоставлений"],[[relation[k],str(counts[k])] for k in relation],[365,130])
+table("Результаты сверки устных ответов с письменными историями",["Результат сверки","Число сопоставлений"],[[relation[k],str(counts[k])] for k in relation],[365,130])
 add(f"Всего {len(notes)} записей сверки. Одна история может содержать несколько проверяемых утверждений. Для найденных ответов сохранены цитаты, вопрос и время на видео; отсутствующие пересказы отмечены отдельно.")
 heading("Материалы")
-table(["Материал","Объём"],[
+table("Исходные материалы",["Материал","Объём"],[
  ["Видео",f"{len(videos)} записей; один ракурс"],
  ["Письменные истории",f"{len(sources)} историй; {research.get('source_documents',0)} исходных документов"],
  ["Диалоги",f"{sum(len(a.get('qa_candidates',[])) for a in audios)} пары «вопрос - ответ»"],
@@ -167,28 +180,27 @@ for i,a in enumerate(audios,1):
     duration=by_alignment.get(a["participant_id"],{}).get("media_duration_s",a.get("duration_s"))
     difference=b.get("analysis_duration_s",0)-duration if duration is not None and b.get("analysis_duration_s") is not None else None
     rows.append([f"P{i:02}",names[a["participant_id"]],num(duration),num(b.get("analysis_duration_s")),num(difference)])
-table(["ID","Участник","Видео, с","БОС, с","Разница, с"],rows,[35,190,90,90,90])
-add("Видео, тексты и записи прибора объединены по именам файлов и данным документов. Обозначения P01–P"+f"{len(order):02}"+" на графиках соответствуют порядку этой таблицы.")
+recordings_table=table("Длительность видеозаписей и записей БиоРадио",["ID","Участник","Видео, с","БОС, с","Разница, с"],rows,[35,190,90,90,90])
+add(f"Видео, тексты и записи прибора объединены по именам файлов и данным документов. Обозначения P01–P{len(order):02} в таблицах и на рисунках соответствуют порядку таблицы {recordings_table}.")
 heading("Синхронизация")
 add("БиоРадио запускали перед видеозаписью и останавливали после неё. Поэтому длительность БОС больше длительности видео. Разница задаёт допустимый диапазон опережения прибора: от 0 до LБОС − Lвидео.")
 add("За начало видео принят первый декодированный кадр. Начальный и конечный фон с закрытыми глазами найдены по речевым инструкциям и геометрии глаз. В этих фрагментах сопоставлены rPPG и опорный пульсовой ряд по R-зубцам ЭКГ. Проверены альтернативные пики корреляции.")
-add("Преобразование времени: tвидео = offset + scale × tБОС. В расчётах scale = 1. В таблице приведены автоматические оценки смещения; статус отражает однозначность найденного пика.")
+add(f"Преобразование времени: tвидео = offset + scale × tБОС. В расчётах scale = 1. В таблице {numbers['table']+1} приведены автоматические оценки смещения; статус отражает однозначность найденного пика.")
 statuses={"supported_unverified":"Выраженный пик","ambiguous_unverified":"Несколько вариантов","insufficient_signal":"Мало сигнала"}
-table(["Участник","Статус","Диапазон опережения, с","Offset, с"],[
+sync_table=table("Автоматические оценки смещения БиоРадио относительно видео",["Участник","Статус","Диапазон опережения, с","Offset, с"],[
  [names[pid],statuses.get(by_alignment.get(pid,{}).get("status"),"Не рассчитано"),
  interval(by_alignment.get(pid,{}).get("lead_bounds_s")),
  num(by_alignment.get(pid,{}).get("bio_to_video_offset_s",(by_alignment.get(pid,{}).get("candidate") or {}).get("bio_to_video_offset_s")),2)]
  for pid in order],[135,140,110,110])
 story.append(PageBreak())
 heading("Данные участников")
-table(["Участник","ИСУ","Естественный","Демонстрируемый","Выраженность"],[
+profiles_table=table("Профили участников",["Участник","ИСУ","Естественный","Демонстрируемый","Выраженность"],[
  [names[pid],by_profile.get(pid,{}).get("tab_number") or "н/д",
   by_profile.get(pid,{}).get("profile_natural_raw","").replace("/","/\n") or "н/д",
   by_profile.get(pid,{}).get("profile_demonstrated_raw","").replace("/","/\n") or "н/д",
   by_profile.get(pid,{}).get("expression") or "н/д"]
  for pid in order],[125,55,110,115,90])
-add("Эмоциональные показатели","Sub")
-table(["Участник","Эмоц+","Эмоц−","Эмоц_Баланс"],[
+emotions_table=table("Эмоциональные показатели участников",["Участник","Эмоц+","Эмоц−","Эмоц_Баланс"],[
  [f"P{i+1:02}",by_profile.get(pid,{}).get("emotion_positive") or "н/д",
   by_profile.get(pid,{}).get("emotion_negative") or "н/д",
   by_profile.get(pid,{}).get("emotion_balance") or "н/д"]
@@ -196,23 +208,21 @@ table(["Участник","Эмоц+","Эмоц−","Эмоц_Баланс"],[
 for pid in order:
     if by_profile.get(pid,{}).get("profile_link_status")=="requested_id_not_found":
         add(f"{names[pid]}: ИСУ {by_profile[pid]['tab_number']} в исходной таблице отсутствует.","SmallRu")
-add("Результаты.xlsx; сопоставление по ИСУ","SmallRu")
+add(f"Источник таблиц {profiles_table} и {emotions_table}: Результаты.xlsx, сопоставление по номеру ИСУ.","SmallRu")
 story.append(PageBreak())
 heading("ЭКГ, дыхание и качество сигналов")
 add("Файлы BCRX декодированы в численные ряды. Частоты дискретизации, единицы и коэффициенты прочитаны из заголовков. После фильтрации ЭКГ найдены R-зубцы, проверены RR-интервалы и рассчитаны ЧСС, SDNN, RMSSD, pNN50, VLF, LF, HF и LF/HF [1].")
 add("Окно ВСР — 120 с, шаг — 5 с. Окна с разрывами или нестабильными RR исключены из итоговых оценок. Диапазоны спектра: VLF 0,0033–0,04 Гц, LF 0,04–0,15 Гц, HF 0,15–0,4 Гц; общая мощность — сумма трёх диапазонов. ULF в окне 120 с не рассчитывается. Дыхательный пояс RIP обработан отдельно; EDR рассчитан по колебаниям амплитуды ЭКГ.")
-table(["Участник","Окон","Прошли контроль","Медиана ЧСС"],[
+table("Окна ВСР и контроль качества ЭКГ",["Участник","Окон","Прошли контроль","Медиана ЧСС, уд/мин"],[
  [f"P{i+1:02}",str(by_bio.get(pid,{}).get("window_count","—")),str(by_bio.get(pid,{}).get("usable_ecg_windows","—")),num(by_bio.get(pid,{}).get("median_hr_bpm"))]
  for i,pid in enumerate(order)],[80,110,145,160])
-fig=OUT/"bio/aggregate_summary.png"
-if fig.exists():story.append(Image(str(fig),width=495,height=207))
-add("Рисунок 1. Качество ЭКГ и описательные показатели по участникам.","SmallRu")
+figure(OUT/"bio/aggregate_summary.png","Качество ЭКГ и описательные показатели по участникам")
 add(f"В {gsr_review_count} из {len(bio)} записей GSR обнаружены плоские участки или значения вне рабочего диапазона. Эти данные сохранены с отметкой качества.")
 if ppg_records:
     story.append(PageBreak())
     heading("Контактный ФПГ и ЭКГ")
     add("Контактный ФПГ записан вместе с ЭКГ одним прибором. Сравнение использует общую шкалу отсчётов БиоРадио. Пульсовые интервалы рассчитаны после фильтрации и контроля качества.")
-    table(["Участник","Окон ФПГ / прошли QC","Сравнено окон","MAE ЧСС, уд/мин"],[
+    table("Сравнение контактного ФПГ и ЭКГ",["Участник","Окон ФПГ / прошли QC","Сравнено окон","MAE ЧСС, уд/мин"],[
         [names.get(b["subject_id"],b["subject_id"]),
          f"{b['ppg_analysis'].get('window_count','—')} / {b['ppg_analysis'].get('usable_ppg_windows','—')}",
          str(b.get("ecg_ppg_comparison",{}).get("paired_windows","—")),
@@ -220,10 +230,7 @@ if ppg_records:
     for b in ppg_records:
         c=b.get("ecg_ppg_comparison",{})
         add(f"{names.get(b['subject_id'],b['subject_id'])}: средняя разность ЧСС ФПГ − ЭКГ составляет {num(c.get('hr_bias_ppg_minus_ecg_bpm'),2)} уд/мин. Средняя абсолютная разность RMSSD — {num(c.get('rmssd_mae_ms'),2)} мс, SDNN — {num(c.get('sdnn_mae_ms'),2)} мс. В сравнение включены окна, прошедшие контроль обоих каналов.")
-        fig=OUT/"bio"/b["subject_id"]/"ecg_ppg_comparison.png"
-        if fig.exists():
-            im=Image(str(fig));im.drawHeight=495*im.imageHeight/im.imageWidth;im.drawWidth=495;story.append(im)
-            add("Рисунок 2. Контактный ФПГ, R-зубцы ЭКГ и сравнение частоты пульса на общей шкале прибора.","SmallRu")
+        figure(OUT/"bio"/b["subject_id"]/"ecg_ppg_comparison.png","Контактный ФПГ, R-зубцы ЭКГ и сравнение частоты пульса на общей шкале прибора")
 else:
     add("Контактный ФПГ в исходных записях отсутствует; пульс по видео сопоставлен с ЭКГ.")
 story.append(PageBreak())
@@ -237,23 +244,21 @@ for i,pid in enumerate(order):
     rows.append([f"P{i+1:02}",percent(v.get("face_coverage")),
        f"{len(v.get('windows',[]))} / {sum(w.get('rppg_hr_bpm') is not None for w in v.get('windows',[]))} / {c.get('hr_paired_windows',0)}",
        num(c.get("hr_mae_bpm"),2),f"{num(c.get('resp_mae_bpm'),2)} (n={c.get('resp_paired_windows',0)})"])
-table(["Участник","Кадры с ROI","Окна: всего / ЧСС / пары ЭКГ","MAE ЧСС, уд/мин","MAE дыхания, /мин"],rows,[60,85,140,95,115])
-add("MAE — средняя абсолютная разность частот: видеопульс сопоставлен с ЭКГ, движение плеч — с RIP. Использованы автоматические смещения из таблицы синхронизации и окна с допустимым качеством; n — число пар дыхательных оценок.","SmallRu")
-fig=OUT/"audit/video_quality.png"
-if fig.exists():story.append(Image(str(fig),width=495,height=264))
-add(f"Рисунок {3 if ppg_records else 2}. Доля кадров с лицевыми областями и доля окон с рассчитанной ЧСС rPPG.","SmallRu")
+table("Покрытие лица, видеопульс и дыхательное движение",["Участник","Кадры с ROI","Окна: всего / ЧСС / пары ЭКГ","MAE ЧСС, уд/мин","MAE дыхания, /мин"],rows,[60,85,140,95,115])
+add(f"MAE — средняя абсолютная разность частот: видеопульс сопоставлен с ЭКГ, движение плеч — с RIP. Использованы автоматические смещения из таблицы {sync_table} и окна с допустимым качеством; n — число пар дыхательных оценок.","SmallRu")
+figure(OUT/"audit/video_quality.png","Доля кадров с лицевыми областями и доля окон с рассчитанной ЧСС rPPG")
 story.append(PageBreak())
 heading("Распознавание речи и проверка текста")
 models_used=", ".join(sorted({str(a.get("model","Whisper")) for a in audios}))
 add(f"Расшифровка получена моделью {models_used} через faster-whisper [6]. При вычитке проверены отрицания, короткие ответы и вопросы; сохранены временные метки слов и сегментов.")
 if editorial:
     add("Назначены роли интервьюера и респондента, объединены разорванные фразы, исправлены очевидные ошибки текста. Исходные варианты сохранены в журнале правок.")
-    table(["Проверка","Результат"],[[label,str(editorial[key])] for key,label in [
+    table("Редакторская проверка стенограмм",["Проверка","Результат"],[[label,str(editorial[key])] for key,label in [
         ("recordings","Вычитано записей"),("reviewed_segments","Проверено исходных сегментов"),
         ("turns","Реплик после редактирования"),("text_corrections","Текстовых правок"),
         ("merge_groups","Объединено разорванных фраз"),("unresolved_text_fragments","Фрагментов с неуверенным распознаванием")]], [365,130])
 elif asr_validation:
-    table(["Проверка","Результат"],[[label,str(asr_validation[key])] for key,label in [
+    table("Повторная проверка распознавания речи",["Проверка","Результат"],[[label,str(asr_validation[key])] for key,label in [
         ("recordings","Повторно распознано записей"),("reviewed_segments","Прочитано исходных сегментов"),
         ("text_correction_count","Исправлено текстов реплик"),("timing_only_count","Уточнено временных границ"),
         ("recovered_segments","Восстановлено пропущенных реплик"),("unresolved_count","Фрагменты с неуверенным распознаванием")]
@@ -272,7 +277,7 @@ elif asr_validation:
 add("По аудиодорожкам извлечены основной тон и его изменчивость, энергия, паузы, доля звучащей речи, спектральный центр, наклон и форманты. Для пар «вопрос - ответ» рассчитаны задержка и длительность ответа, темп в словах/мин и оценка слогов/с по числу гласных. Для начального разделения голосов использованы представления WeSpeaker.")
 heading("Сопоставление с эталоном")
 add("Письменные истории сопоставлены с интервью по событию, действующему лицу, времени, действию и отрицанию. Короткие ответы рассмотрены вместе с предшествующим вопросом.")
-table(["Категория","Критерий"],[[relation[k],v] for k,v in [
+table("Категории сверки с письменным эталоном",["Категория","Критерий"],[[relation[k],v] for k,v in [
  ("consistent","Устный ответ воспроизводит событие или деталь эталона."),
  ("contradiction_candidate","Отрицание факта, замена события, примера или существенной детали эталона."),
  ("different","Сведения вне проверяемого факта; замены эталонного события или детали нет."),
@@ -288,7 +293,7 @@ for pid in order:
         related=[n for n in notes if n["story_id"]==src["story_id"]]
         cats=list(dict.fromkeys(relation.get(x["relation"],x["relation"]) for x in related))
         rows.append([story_topic_title(src["title"]),"; ".join(cats) or "Не найден соответствующий эпизод"])
-    if rows:table(["Письменная история","Результат сверки"],rows,[240,255])
+    if rows:table(f"Результаты сверки историй: {names.get(pid,pid)}",["Письменная история","Результат сверки"],rows,[240,255])
     rank={"contradiction_candidate":0,"uncertain":1,"different":2,"consistent":3,"omitted":4}
     chosen=sorted([n for n in notes if n["participant_id"]==pid and n.get("spoken_excerpt")],key=lambda n:(rank.get(n["relation"],9),-float(n.get("confidence",0))))[:3]
     evidence_groups={}
@@ -333,7 +338,7 @@ add("Проверка LOPO каждый раз исключает из обуч�
 add("Речевые признаки: основной тон, его разброс, уровень сигнала, темп и доля пауз. Видеопризнаки: скорость головы, движение торса, раскрытие глаз и движение рта. BioRadio: ЧСС, RMSSD ЭКГ и частота RIP в 120-секундном контексте ответа.","SmallRu")
 add(f"До заполнения пропусков основной тон доступен для {feature_counts['audio_pitch_median_hz']} ответов, движение головы — для {feature_counts['video_head_speed_norm_per_s']}, рта — для {feature_counts['video_mouth_motion_ratio_per_s']}, ЧСС ЭКГ — для {feature_counts['bio_ecg_hr_bpm_context120s']}, частота RIP — для {feature_counts['bio_rip_rate_bpm_context120s']}.","SmallRu")
 add("Профили включают выраженность, Эмоц+, Эмоц− и отдельные признаки наличия компонентов естественного и демонстрируемого типа. Эмоциональный баланс используется в корреляциях. Имена, ИСУ и тексты вопросов и эталонов в признаки моделей не входят.","SmallRu")
-table(["Модель","Brier","95% ДИ Brier","Сбаланс. точность","ROC AUC"],[
+table("Качество моделей при проверке LOPO",["Модель","Brier","95% ДИ Brier","Сбаланс. точность","ROC AUC"],[
  [row["name"],num(row["metrics"].get("brier"),3),
   f"[{num(row['metrics'].get('brier_ci_low'),3)}; {num(row['metrics'].get('brier_ci_high'),3)}]",
   num(row["metrics"].get("balanced_accuracy"),3),num(row["metrics"].get("roc_auc"),3)]
@@ -345,14 +350,12 @@ story.append(PageBreak())
 heading("Вклад профилей и биосигналов")
 fig=OUT/"research/multimodal/model_comparison.png"
 if not fig.exists():raise SystemExit(f"Missing analysis figure: {fig}")
-im=Image(str(fig));scale=495/im.imageWidth
-im.drawWidth=im.imageWidth*scale;im.drawHeight=im.imageHeight*scale;story.append(im)
-add(f"Рисунок {4 if ppg_records else 3}. Ошибка на исключённых участниках и изменение при добавлении профилей. Ромбы показывают средние; отдельные точки отражают участников.","SmallRu")
+figure(fig,"Ошибка на исключённых участниках и изменение при добавлении профилей. Ромбы показывают средние; отдельные точки отражают участников")
 add(f"Добавление профилей к видео и речи изменило Brier на {num(increment['delta_brier'],4)}; 95% ДИ [{num(increment['ci_low'],4)}; {num(increment['ci_high'],4)}]. Положительная разность означает рост ошибки. Интервал включает ноль; преимущество профилей не установлено.","SmallRu")
 classified=model_metrics['av_profiles']['confusion_counts']
 add(f"Модель «видео + речь + профили» обнаружила {classified['tp']} из {dataset['contradictions']} несоответствий, пропустила {classified['fn']} и дала {classified['fp']} ложных срабатывания. Добавление BioRadio снизило Brier с {num(model_metrics['av']['brier'],4)} до {num(model_metrics['fusion']['brier'],4)}, но ROC AUC осталось {num(model_metrics['fusion']['roc_auc'],3)}. Объединение каналов не обеспечило распознавания.","SmallRu")
 add("Проверена чувствительность результатов к временному совмещению: расчёт повторён на нижней и верхней границах интервалов автоматического смещения при scale = 1.","SmallRu")
-table(["Граница смещения","Расширение AV","Brier","ROC AUC"],[
+table("Чувствительность моделей к границам смещения",["Граница смещения","Расширение AV","Brier","ROC AUC"],[
  [scenario["name"],"BioRadio + профили" if row["id"]=="fusion_profiles" else "BioRadio",
   num(row["metrics"].get("brier"),4),num(row["metrics"].get("roc_auc"),3)]
  for scenario in multimodal["sync_sensitivity"] for row in scenario["models"]],[145,170,90,90])
@@ -367,20 +370,14 @@ add(f"Сопоставлены профили и показатели за вс�
 add(f"Рассчитаны {estimated} из {len(associations)} сочетаний; остальные не набрали минимум 6 пригодных участников или вариативных значений. Для ЭКГ, RIP и rPPG требуется не менее 20% пригодных окон записи. После поправки Холма статистически значимых связей не обнаружено (p < 0,05).","SmallRu")
 fig=OUT/"research/multimodal/associations.png"
 if not fig.exists():raise SystemExit(f"Missing analysis figure: {fig}")
-im=Image(str(fig));scale=min(495/im.imageWidth,540/im.imageHeight)
-im.drawWidth=im.imageWidth*scale;im.drawHeight=im.imageHeight*scale;im.hAlign="CENTER";story.append(im)
-add(f"Рисунок {5 if ppg_records else 4}. Все {families['primary']} основных сочетаний. Одна точка соответствует одному участнику; подписи содержат n, коэффициент Спирмена и p Холма.","SmallRu")
+figure(fig,f"Все {families['primary']} основных сочетаний. Одна точка соответствует одному участнику; подписи содержат n, коэффициент Спирмена и p Холма",max_height=540)
 head_association=next(row for row in associations if row['profile']=='expression' and row['feature']=='video_head_speed_norm_per_s')
 add(f"Самая сильная по модулю связь в основном семействе — выраженность профиля и скорость головы: ρ = {num(head_association['rho'],3)}, p Холма = {num(head_association['p_holm'],3)}. Более высокой выраженности соответствовала меньшая скорость движения головы; связь не достигла статистической значимости. Здесь сравниваются различия между участниками за всю запись; связь этого признака с меткой ответа отдельно не установлена.","SmallRu")
 
 story.append(PageBreak())
 heading("Интерфейс и запуск")
 add("Локальное приложение объединяет пять зон: временную шкалу; стенограмму и истории; биосигналы; видео с областями лица и позой; спектр ВСР и численные признаки. Переход по цитате открывает нужный фрагмент с вопросом. Разметка и смещение сохраняются в JSON.")
-interface_path=OUT/"report/interface.png"
-if interface_path.exists():
-    im=Image(str(interface_path));scale=min(495/im.imageWidth,340/im.imageHeight)
-    im.drawWidth=im.imageWidth*scale;im.drawHeight=im.imageHeight*scale;story.append(im)
-    add(f"Рисунок {6 if ppg_records else 5}. Интерфейс просмотра и сопоставления записей.","SmallRu")
+figure(OUT/"report/interface.png","Интерфейс просмотра и сопоставления записей",max_height=340)
 add("Запуск: start.cmd. Установка для Windows/Linux/macOS и запуск через Docker описаны в README.")
 story.append(Paragraph("Исходный код, тесты и конфигурация GitHub Actions: "+link(args.repository)+".",styles["TextRu"]))
 story.append(PageBreak())
@@ -394,7 +391,7 @@ for ref in [
  "[6] SYSTRAN. faster-whisper. https://github.com/SYSTRAN/faster-whisper",
 ]:add(ref,"SmallRu")
 heading("Файлы результатов")
-table(["Путь в проекте","Содержимое"],[
+table("Файлы результатов",["Путь в проекте","Содержимое"],[
  ["outputs/research/content_comparison.csv","Сопоставления с цитатами, контекстом и временем"],
  ["outputs/research/multimodal/analysis-results.zip","Полный анализ: CSV, графики, план, происхождение, параметры и код"],
  ["outputs/research/multimodal/associations.csv","Все корреляции: n, rho, p, поправка Холма и интервалы"],
