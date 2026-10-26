@@ -102,8 +102,13 @@ def timecode(t):
 def trim(t,n=240):
     t=str(t or "")
     return t if len(t)<=n else t[:n].rsplit(" ",1)[0]+"…"
+def decimal(text):
+    return text.replace(".",",").replace("-","−")
 def num(v,d=1):
-    try:return f"{float(v):.{d}f}" if math.isfinite(float(v)) else "н/д"
+    try:return decimal(f"{float(v):.{d}f}") if math.isfinite(float(v)) else "н/д"
+    except (TypeError,ValueError):return "н/д"
+def plain(v):
+    try:return decimal(f"{float(v):g}") if math.isfinite(float(v)) else "н/д"
     except (TypeError,ValueError):return "н/д"
 def interval(value):
     return "–".join(num(x,2) for x in value) if isinstance(value,list) and len(value)==2 else "н/д"
@@ -161,7 +166,7 @@ story.append(Paragraph("Репозиторий проекта: "+link(args.repos
 story.append(PageBreak())
 heading("Задача")
 add("Разработать комплекс синхронного анализа видео, речи и биосигналов и проверить возможность распознавания лжи с учётом профилей участников. В эксперименте участники намеренно изменяли часть ответов. Письменные истории служат правдивым эталоном для разметки.")
-add(f"Обработано {len(audios)} записей общей продолжительностью {sum(a.get('duration_s',0) for a in audios)/60:.2f} мин. Сверено {review.get('stories_reviewed',len(sources))} историй. Подготовлены стенограммы с временными метками, показатели речи, ЭКГ и дыхания, видеопульс, кинематика и локальный интерфейс для просмотра результатов.")
+add(f"Обработано {len(audios)} записей общей продолжительностью {num(sum(a.get('duration_s',0) for a in audios)/60,2)} мин. Сверено {review.get('stories_reviewed',len(sources))} историй. Подготовлены стенограммы с временными метками, показатели речи, ЭКГ и дыхания, видеопульс, кинематика и локальный интерфейс для просмотра результатов.")
 table("Результаты сверки устных ответов с письменными историями",["Результат сверки","Число сопоставлений"],[[relation[k],str(counts[k])] for k in relation],[365,130])
 add(f"Всего {len(notes)} записей сверки. Одна история может содержать несколько проверяемых утверждений. Для найденных ответов сохранены цитаты, вопрос и время на видео; отсутствующие пересказы отмечены отдельно.")
 heading("Материалы")
@@ -206,12 +211,12 @@ profiles_table=table("Профили участников",["Участник","
  [names[pid],by_profile.get(pid,{}).get("tab_number") or "н/д",
   by_profile.get(pid,{}).get("profile_natural_raw","").replace("/","/\n") or "н/д",
   by_profile.get(pid,{}).get("profile_demonstrated_raw","").replace("/","/\n") or "н/д",
-  by_profile.get(pid,{}).get("expression") or "н/д"]
+  plain(by_profile.get(pid,{}).get("expression"))]
  for pid in order],[125,55,110,115,90])
 emotions_table=table("Эмоциональные показатели участников",["Участник","Эмоц+","Эмоц−","Эмоц_Баланс"],[
- [f"P{i+1:02}",by_profile.get(pid,{}).get("emotion_positive") or "н/д",
-  by_profile.get(pid,{}).get("emotion_negative") or "н/д",
-  by_profile.get(pid,{}).get("emotion_balance") or "н/д"]
+ [f"P{i+1:02}",plain(by_profile.get(pid,{}).get("emotion_positive")),
+  plain(by_profile.get(pid,{}).get("emotion_negative")),
+  plain(by_profile.get(pid,{}).get("emotion_balance"))]
  for i,pid in enumerate(order)],[75,140,140,140])
 for pid in order:
     if by_profile.get(pid,{}).get("profile_link_status")=="requested_id_not_found":
