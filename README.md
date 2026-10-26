@@ -36,6 +36,7 @@ python scripts/analyze_video.py --input ../1_30 --workers 4
 python scripts/make_proxies.py --input ../1_30
 python scripts/estimate_sync.py
 python scripts/analyze_research.py
+python scripts/analyze_contrasts.py
 python scripts/audit_project.py
 python scripts/build_report.py
 ```

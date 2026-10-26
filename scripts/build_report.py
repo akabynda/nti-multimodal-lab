@@ -23,7 +23,8 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.lib.pagesizes import A4
 from nti_lab.palette import BLUE, INK, MUTED, LINE, SURFACE, WHITE
 from nti_lab.story_topics import story_topic_title
-from nti_lab.multimodal_analysis import TYPE_CORRECTIONS
+from nti_lab.multimodal_analysis import TYPE_CORRECTIONS, FEATURE_LABELS
+from nti_lab import contrasts as contrast_lib
 from nti_lab import session_summary as summary_lib
 from nti_lab import report_figures
 import numpy as np
@@ -488,9 +489,68 @@ add(f"Всего {counted(len(notes),'запись','записи','записе
 
 story.append(PageBreak())
 heading("Статистический анализ")
-subheading("Выборка и модели")
 if not multimodal.get("models"):
     raise SystemExit("Run scripts/analyze_multimodal.py before building the report")
+contrast_summary=read(OUT/"research/contrasts/summary.json")
+if not contrast_summary:
+    raise SystemExit("Run scripts/analyze_contrasts.py before building the report")
+def holm_p(value):
+    return "н/д" if value is None else num(value,3)
+def delta_text(delta):
+    text=f"Δ Brier = {num(delta['delta_brier'],4)}; 95 % ДИ [{num(delta['ci_low'],4)}; {num(delta['ci_high'],4)}]"
+    return text+("; интервал включает 0" if delta["ci_low"]<=0<=delta["ci_high"] else "")
+def significant(rows,key):
+    return [row for row in rows if row.get(key) is not None and row[key]<.05]
+labels_ru={**FEATURE_LABELS,contrast_lib.ANOMALY:"Норма вектора акустических аномалий"}
+tests=contrast_summary["tests"]
+contrast_models={row["id"]:row["metrics"] for row in contrast_summary["models"]}
+normalization_delta=contrast_summary["increments"]["normalized_minus_raw"]
+subheading("Метки ответов и нормализация")
+add("Каждому ответу присвоена одна из трёх меток: «Правда» — ответ согласуется с письменным эталоном; «Ложь» — ответ содержит несоответствие эталону (раздел 6); «База» — ответ на вопрос нейтрального блока (о себе, увлечения, самочувствие; раздел 1.4). Ответ с меткой «Правда» или «Ложь» в «Базу» не входит.")
+count_rows=[]
+for i,pid in enumerate(order):
+    c=next((row for row in contrast_summary["counts"] if row["participant_id"]==pid),{})
+    count_rows.append([f"P{i+1:02}",str(c.get("truth",0)),str(c.get("lie",0)),str(c.get("base",0))])
+count_rows.append(["Всего",*[str(sum(int(row[j]) for row in count_rows)) for j in (1,2,3)]])
+labels_table=table("Число ответов по меткам",["Участник","«Правда»","«Ложь»","«База»"],count_rows,[110,128,128,129])
+add(f"Нормализация выполняется отдельно для каждого участника и признака: z = (x − медиана «Базы») / (IQR всех ответов участника / 1,349); z ограничено интервалом [−{num(contrast_lib.Z_LIMIT,0)}; {num(contrast_lib.Z_LIMIT,0)}]. Метки «Правда» и «Ложь» в расчёт центра и масштаба не входят. При менее чем {contrast_lib.MIN_BASE} значениях «Базы» или менее чем {contrast_lib.MIN_SCALE} ответах с измеренным признаком z не рассчитывается. Вектор акустических аномалий ответа — z основного тона, разброса F0, уровня, темпа и доли пауз; его норма — корень из среднего квадрата доступных компонент.")
+add("Контраст участника по признаку — среднее z ответов «Ложь» минус среднее z ответов «Правда». Единица статистического вывода — участник.")
+subheading("Гипотезы")
+group=contrast_summary["group"]
+group_codes=", ".join(codes[pid] for pid in order if pid in group["participants"])
+other_codes=", ".join(codes[pid] for pid in order if pid not in group["participants"])
+estimable=lambda key:sum(row.get(key) is not None for row in tests)
+def verdict(rows,key):
+    hits=significant(rows,key)
+    return "p Холма < 0,05: "+", ".join(labels_ru.get(r["feature"],r["feature"]) for r in hits) if hits else "Нулевая гипотеза не отвергнута ни для одного признака (p Холма ≥ 0,05)"
+hypotheses=[
+ ["H1","Контраст «Ложь − Правда» отличается от нуля",f"Точный двусторонний тест перестановки знаков по участникам; поправка Холма по {estimable('h1_p')} признакам",verdict(tests,"h1_p_holm")],
+ ["H2",f"Контраст различается между группами профиля: ведущий естественный тип «Содействующий» ({group_codes}) и остальные ({other_codes})",f"Точный перестановочный тест разности средних групп; минимум {contrast_lib.MIN_GROUP} участника в группе; поправка Холма по {estimable('h2_p')} признакам",verdict(tests,"h2_p_holm")],
+ ["H3","Контраст связан с выраженностью профиля","Коэффициент Спирмена, точные перестановки рангов; минимум 6 участников; поправка Холма",verdict(tests,"h3_p_holm")],
+ ["H4","Профили снижают ошибку модели «видео + речь»","Δ Brier с профилями и без, LOPO, bootstrap по участникам",delta_text(multimodal["profile_increment"])],
+ ["H5","Нормализация к «Базе» снижает ошибку модели","Δ Brier нормированных и исходных признаков, LOPO, bootstrap по участникам",delta_text(normalization_delta)],
+]
+hypotheses_table=table("Проверяемые гипотезы, уровень значимости 0,05",["№","Гипотеза H1 (альтернатива)","Метод","Результат"],hypotheses,[28,150,160,157])
+subheading("Контрасты и маркеры по группам профиля")
+add(f"Контрасты по признакам и группам приведены в таблице {numbers['table']+1}. Признак не рассчитывается, если контраст доступен менее чем у 6 участников (основной тон, его разброс и уровень речи вычисляются только по окнам 5 с внутри ответа).")
+marker_rows=[]
+for row in tests:
+    marker_rows.append([labels_ru.get(row["feature"],row["feature"]),str(row["h1_n"]),
+        f"{num(row['h1_mean'],2)} [{num(row['h1_ci_low'],2)}; {num(row['h1_ci_high'],2)}]" if row["h1_mean"] is not None else "н/д",holm_p(row.get("h1_p_holm")),
+        num(row["h2_group_mean"],2),num(row["h2_other_mean"],2),holm_p(row.get("h2_p_holm")),
+        num(row["h3_rho"],2),holm_p(row.get("h3_p_holm"))])
+table("Контраст «Ложь − Правда» в единицах z: все участники, группы профиля и связь с выраженностью",
+      ["Признак","n","Среднее [95 % ДИ]","p Холма H1","Сод.","Др.","p Холма H2","ρ","p Холма H3"],marker_rows,[108,22,92,48,40,40,48,40,57])
+add("n — число участников с контрастом; Сод. и Др. — средний контраст группы с ведущим естественным типом «Содействующий» и остальных участников; ρ — коэффициент Спирмена контраста и выраженности профиля.","SmallRu")
+ranked=sorted([row for row in tests if row["h2_group_mean"] is not None],key=lambda row:-abs(row["h2_group_mean"]))[:3]
+ranked_other=sorted([row for row in tests if row["h2_other_mean"] is not None],key=lambda row:-abs(row["h2_other_mean"]))[:3]
+if ranked and ranked_other:
+    add("Наибольшие по модулю средние контрасты группы «Содействующий»: "+"; ".join(f"{labels_ru.get(r['feature'],r['feature']).split(',')[0].lower()} ({num(r['h2_group_mean'],2)})" for r in ranked)+". Группы остальных профилей: "+"; ".join(f"{labels_ru.get(r['feature'],r['feature']).split(',')[0].lower()} ({num(r['h2_other_mean'],2)})" for r in ranked_other)+". Значимость этих различий приведена в столбцах p Холма.")
+table("Модели LOPO на исходных и нормированных к «Базе» признаках",["Модель","Brier","95 % ДИ Brier","Сбаланс. точность","ROC AUC"],[
+ [row["name"],num(row["metrics"]["brier"],3),f"[{num(row['metrics']['brier_ci_low'],3)}; {num(row['metrics']['brier_ci_high'],3)}]",
+  num(row["metrics"]["balanced_accuracy"],3),num(row["metrics"]["roc_auc"],3)] for row in contrast_summary["models"]],[185,50,100,85,75])
+add("Признаки: речь (5), видео (4), ЧСС и RMSSD ЭКГ в окне 120 с. Модель, разбиение и метрики совпадают с разделом 7.4. Нормированные признаки рассчитываются по ответам исключённого участника без использования меток.","SmallRu")
+subheading("Модели классификации")
 dataset=multimodal["dataset"]
 model_rows=multimodal["models"]
 model_metrics={row["id"]:row["metrics"] for row in model_rows}
@@ -604,6 +664,7 @@ table("Файлы результатов",["Путь в проекте","Сод�
  ["outputs/research/multimodal/participant_features.csv","Показатели участников за всю запись"],
  ["outputs/research/multimodal/trial_features.csv","Показатели отдельных ответов"],
  ["outputs/research/multimodal/model_predictions.csv","Прогнозы LOPO для воспроизведения оценок"],
+ ["outputs/research/contrasts/","Ответы с метками «Правда», «Ложь», «База», нормированные признаки, контрасты участников и проверка гипотез"],
  ["outputs/report/figures/","Рисунки синхронизации, согласия rPPG и ЭКГ и синхронных сигналов"],
  ["outputs/report/session_summary.csv","Сводные показатели ВСР, речи и кинематики по записям (таблицы раздела 1.4, 3–5)"],
  ["outputs/audio/","Стенограммы, временные метки, акустические признаки"],
