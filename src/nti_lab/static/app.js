@@ -351,7 +351,7 @@ function dashboard(){
   else if(!D.audio.editorial_review){const prev=segs[ix-1];if(dialogueRole(seg)==="respondent"&&prev&&dialogueRole(prev)==="interviewer"&&seg.start>=prev.end)latency=seg.start-prev.end;}}
  const inRange=bt>=0&&bt<=(D.bio.analysis_duration_s||0);
  const hvalid=inRange&&hrv.ecg_quality==="usable_automatic";
- const metrics=[["ЧСС ЭКГ",hvalid?hrv.hr_bpm:null,"уд/мин"],["ЧСС rPPG",v.rppg_hr_bpm,"уд/мин"],["RMSSD",hvalid?hrv.rmssd_ms:null,"мс"],["Основной тон",ac.pitch_median_hz,"Гц"],["Темп сегмента",words,"слов/мин"],["Задержка ответа",latency,"с"]];
+ const metrics=[["ЧСС ЭКГ",hvalid?hrv.hr_bpm:null,"уд/мин"],["ЧСС rPPG",v.rppg_hr_bpm,"уд/мин"],["RMSSD",hvalid?hrv.rmssd_ms:null,"мс"],["Индекс напряжения",hvalid?hrv.stress_index:null,"у. е."],["Основной тон",ac.pitch_median_hz,"Гц"],["Темп сегмента",words,"слов/мин"],["Задержка ответа",latency,"с"]];
  $("metrics").replaceChildren(...metrics.map(([name,val,unit])=>{const div=node("div","","metric");div.append(node("span",name),node("strong",fmt(val)),node("span",unit));return div}));
  $("comparison").replaceChildren(node("p",`LF/HF: ${fmt(hvalid?hrv.lf_hf:null,2)} · Дыхание RIP: ${fmt(inRange?hrv.resp_bpm:null)} /мин`),
  node("p",`Частота дыхательного движения видео: ${fmt(v.respiratory_motion_bpm)} /мин · качество rPPG: ${fmt(v.spectral_concentration,2)}`));

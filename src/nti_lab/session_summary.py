@@ -12,7 +12,8 @@ from scipy import signal
 
 from .audio import words_and_syllables
 
-HRV_COLUMNS = ("hr_bpm", "sdnn_ms", "rmssd_ms", "pnn50_pct", "vlf_ms2", "lf_ms2", "hf_ms2", "lf_hf", "total_ms2")
+HRV_COLUMNS = ("hr_bpm", "sdnn_ms", "rmssd_ms", "pnn50_pct", "vlf_ms2", "lf_ms2", "hf_ms2", "lf_hf", "total_ms2",
+               "stress_index")
 # Question topics; the first matching pattern of the final two sentences wins. A question
 # without a match continues the previous block (follow-up questions).
 TOPIC_PATTERNS = (

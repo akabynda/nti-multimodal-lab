@@ -5,7 +5,7 @@ import zlib
 import numpy as np
 import pytest
 
-from nti_lab.biosignals import analyze_ppg, analyze_recording, clean_rr, detect_ppg_peaks, detect_r_peaks, hrv_metrics, read_bcrx, respiratory_metrics, rr_spectrum
+from nti_lab.biosignals import analyze_ppg, analyze_recording, clean_rr, detect_ppg_peaks, detect_r_peaks, hrv_metrics, read_bcrx, respiratory_metrics, rr_spectrum, stress_index
 
 
 def _archive(path, arrays, duration, indices=None, sample_rate=1000):
@@ -86,6 +86,17 @@ def test_hrv_spectral_separation_and_units():
     assert 600 < result["lf_ms2"] < 900
     assert result["ulf_ms2"] is None
     assert result["total_ms2"] == pytest.approx(result["vlf_ms2"] + result["lf_ms2"] + result["hf_ms2"])
+
+
+def test_baevsky_stress_index():
+    # 40 intervals: 20 in the 800–850 ms bin (mode 0.825 s, AMo 50 %), range 0.3 s.
+    nn = np.r_[np.full(20, 810.), np.linspace(700, 1000, 20)]
+    nn[20:][(nn[20:] >= 800) & (nn[20:] < 850)] = 860
+    assert stress_index(nn) == pytest.approx(50 / (2 * .825 * .3))
+    assert stress_index(np.full(40, 800.)) is None
+    assert stress_index(nn[:29]) is None
+    t = np.arange(.5, 120, .8)
+    assert hrv_metrics(t, 800 + 40 * np.sin(t), np.ones(len(t), dtype=bool), 0, 120)["stress_index"] > 0
 
 
 def test_spectrum_is_withheld_for_long_gaps():

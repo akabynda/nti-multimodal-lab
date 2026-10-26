@@ -249,6 +249,23 @@ def rr_spectrum(rr_t_s, rr_ms, valid, start_s, end_s) -> dict:
     return result
 
 
+def stress_index(nn_ms: np.ndarray, bin_ms: float = 50) -> float | None:
+    """Baevsky stress index AMo / (2 × Mo × MxDMn) on accepted RR intervals.
+
+    Mo — centre of the modal 50 ms histogram bin, s; AMo — share of intervals in
+    that bin, %; MxDMn — RR range, s. Requires at least 30 intervals and a range > 0.
+    """
+    nn = np.asarray(nn_ms, dtype=float)
+    if len(nn) < 30 or np.ptp(nn) <= 0:
+        return None
+    bins = np.floor(nn / bin_ms).astype(int)
+    values, counts = np.unique(bins, return_counts=True)
+    modal = values[np.argmax(counts)]
+    mode_s = (modal + .5) * bin_ms / 1000
+    amplitude = 100 * counts.max() / len(nn)
+    return float(amplitude / (2 * mode_s * np.ptp(nn) / 1000))
+
+
 def hrv_metrics(rr_t_s: np.ndarray, rr_ms: np.ndarray, valid: np.ndarray,
                 start_s: float, end_s: float) -> dict:
     """Time metrics on accepted intervals; PSD on 4 Hz interpolated tachogram."""
@@ -262,13 +279,14 @@ def hrv_metrics(rr_t_s: np.ndarray, rr_ms: np.ndarray, valid: np.ndarray,
         "hr_bpm": None, "mean_rr_ms": None, "sdnn_ms": None, "rmssd_ms": None,
         "pnn50_pct": None, "cv_rr_pct": None, "lf_ms2": None, "hf_ms2": None,
         "lf_hf": None, "total_ms2": None, "vlf_ms2": None, "ulf_ms2": None,
-        "lf_nu": None, "hf_nu": None, "spectrum_status": "insufficient_data",
+        "lf_nu": None, "hf_nu": None, "stress_index": None, "spectrum_status": "insufficient_data",
         "rr_coverage_fraction": 0., "max_interpolation_gap_s": None,
     }
     if len(nn) < 4:
         return result
     result.update(hr_bpm=float(60000 / nn.mean()), mean_rr_ms=float(nn.mean()),
-                  sdnn_ms=float(nn.std(ddof=1)), cv_rr_pct=float(100 * nn.std(ddof=1) / nn.mean()))
+                  sdnn_ms=float(nn.std(ddof=1)), cv_rr_pct=float(100 * nn.std(ddof=1) / nn.mean()),
+                  stress_index=stress_index(nn))
     # Do not bridge a rejected interval when calculating successive differences.
     adjacency = good[:-1] & good[1:]
     differences = np.diff(rr_ms)[adjacency]

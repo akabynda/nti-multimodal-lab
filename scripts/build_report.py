@@ -105,6 +105,7 @@ REFERENCES={
  "silero":"Silero VAD : pre-trained voice activity detector / Silero Team. – URL: https://github.com/snakers4/silero-vad.",
  "parselmouth":"Jadoul Y., Thompson B., de Boer B. Introducing Parselmouth: a Python interface to Praat // Journal of Phonetics. – 2018. – Vol. 71. – P. 1–15. – DOI 10.1016/j.wocn.2018.07.001.",
  "wespeaker":"Wang H., Liang C., Wang S. [et al.] WeSpeaker: a research and production oriented speaker embedding learning toolkit // ICASSP 2023 – IEEE International Conference on Acoustics, Speech and Signal Processing. – 2023. – P. 1–5. – DOI 10.1109/ICASSP49357.2023.10096626.",
+ "baevsky":"Баевский Р. М., Иванов Г. Г., Чирейкин Л. В. [и др.] Анализ вариабельности сердечного ритма при использовании различных электрокардиографических систем (методические рекомендации) // Вестник аритмологии. – 2001. – № 24. – С. 65–87.",
  "lopo":"Cross-validation: evaluating estimator performance. LeaveOneGroupOut : документация scikit-learn. – URL: https://scikit-learn.org/stable/modules/cross_validation.html.",
  "brier":"Brier G. W. Verification of forecasts expressed in terms of probability // Monthly Weather Review. – 1950. – Vol. 78, № 1. – P. 1–3. – DOI 10.1175/1520-0493(1950)078<0001:VOFEIT>2.0.CO;2.",
  "holm":"Holm S. A simple sequentially rejective multiple test procedure // Scandinavian Journal of Statistics. – 1979. – Vol. 6, № 2. – P. 65–70.",
@@ -260,7 +261,8 @@ abbreviations=[
  ("F0","основной тон голоса"),("VAD","обнаружение речевой активности"),
  ("ASR","автоматическое распознавание речи"),("LOPO","проверка с исключением одного участника"),
  ("MAE","средняя абсолютная ошибка"),("ROC AUC","площадь под ROC-кривой"),
- ("ДИ","доверительный интервал"),("ИСУ","номер в информационной системе университета")]
+ ("ДИ","доверительный интервал"),("ИН","индекс напряжения регуляторных систем Баевского"),
+ ("ИСУ","номер в информационной системе университета")]
 table("Сокращения",["Сокращение","Расшифровка"],[list(x) for x in abbreviations],[110,385])
 story.append(PageBreak())
 heading("Введение",numbered=False)
@@ -374,11 +376,11 @@ table("Окна ВСР и контроль качества ЭКГ",["Участ
  [f"P{i+1:02}",str(by_bio.get(pid,{}).get("window_count","—")),str(by_bio.get(pid,{}).get("usable_ecg_windows","—")),num(by_bio.get(pid,{}).get("median_hr_bpm"))]
  for i,pid in enumerate(order)],[80,110,145,160])
 figure(OUT/"bio/aggregate_summary.png","Качество ЭКГ и описательные показатели по участникам",intro="Доля пригодных окон и распределения показателей ЭКГ приведены на рисунке {n}.")
-hrv_table=table("Показатели ВСР по ЭКГ: медианы окон, прошедших контроль",["ID","ЧСС, уд/мин","SDNN, мс","RMSSD, мс","pNN50, %","VLF, мс²","LF, мс²","HF, мс²","LF/HF","Общая мощность, мс²"],[
- [f"P{i+1:02}",summary(pid,"hr_bpm"),summary(pid,"sdnn_ms"),summary(pid,"rmssd_ms"),summary(pid,"pnn50_pct"),
+hrv_table=table("Показатели ВСР по ЭКГ: медианы окон, прошедших контроль",["ID","ЧСС, уд/мин","SDNN, мс","RMSSD, мс","pNN50, %","ИН, у. е.","VLF, мс²","LF, мс²","HF, мс²","LF/HF","Общая мощность, мс²"],[
+ [f"P{i+1:02}",summary(pid,"hr_bpm"),summary(pid,"sdnn_ms"),summary(pid,"rmssd_ms"),summary(pid,"pnn50_pct"),summary(pid,"stress_index",0),
   summary(pid,"vlf_ms2",0),summary(pid,"lf_ms2",0),summary(pid,"hf_ms2",0),summary(pid,"lf_hf",2),summary(pid,"total_ms2",0)]
- for i,pid in enumerate(order)],[42,47,44,47,44,48,52,48,40,83])
-add(f"Временные показатели — медианы окон с ecg_quality = usable_automatic; спектральные — медианы тех же окон с рассчитанным спектром. ULF не рассчитывается: окно 120 с короче периода ULF (> 300 с).","SmallRu")
+ for i,pid in enumerate(order)],[34,44,41,44,41,40,44,44,42,38,83])
+add(f"ИН — индекс напряжения Баевского {cite('baevsky')}: AMo / (2 × Mo × MxDMn), где Mo — центр модального интервала гистограммы RR с шагом 50 мс, с; AMo — доля RR в этом интервале, %; MxDMn — размах RR, с. Рассчитывается при не менее 30 принятых RR в окне. Временные показатели и ИН — медианы окон с ecg_quality = usable_automatic; спектральные — медианы тех же окон с рассчитанным спектром. ULF не рассчитывается: окно 120 с короче периода ULF (> 300 с).","SmallRu")
 table("Частота дыхания по поясу RIP",["Участник","Окон с периодическим дыханием","ЧДД RIP, /мин"],[
  [f"P{i+1:02}",str(summaries[pid].get("rip_windows","н/д")),summary(pid,"rip_rate_bpm")] for i,pid in enumerate(order)],[80,250,165])
 add("ЧДД RIP — медиана окон 120 с со статусом RIP_periodic_candidate (доминирующая частота пояса RIP с достаточной периодичностью).","SmallRu")
