@@ -21,6 +21,7 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.lib.pagesizes import A4
 from nti_lab.palette import BLUE, INK, MUTED, LINE, SURFACE, WHITE
 from nti_lab.story_topics import story_topic_title
+from nti_lab.multimodal_analysis import TYPE_CORRECTIONS
 
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/"outputs"
@@ -96,6 +97,8 @@ def figure(path,caption,max_height=None):
     im.drawWidth=im.imageWidth*scale;im.drawHeight=im.imageHeight*scale
     numbers["figure"]+=1
     story.append(KeepTogether([im,p(f"Рисунок {numbers['figure']} – {caption}","FigureCaption")]))
+def model_name(name):
+    return name.replace("BioRadio","БиоРадио").replace("анкета","профили")
 def timecode(t):
     if t is None:return "нет сопоставимого интервала"
     return f"{int(t//60):02d}:{t%60:05.2f}"
@@ -110,6 +113,11 @@ def num(v,d=1):
 def plain(v):
     try:return decimal(f"{float(v):g}") if math.isfinite(float(v)) else "н/д"
     except (TypeError,ValueError):return "н/д"
+def plural(n,one,few,many):
+    n=abs(int(n))%100
+    return one if n%10==1 and n!=11 else few if 2<=n%10<=4 and not 12<=n<=14 else many
+def counted(n,one,few,many):
+    return f"{n} {plural(n,one,few,many)}"
 def interval(value):
     return "–".join(num(x,2) for x in value) if isinstance(value,list) and len(value)==2 else "н/д"
 def percent(value):
@@ -146,6 +154,9 @@ relation={"consistent":"Согласуется с эталоном","different":
 counts=Counter(n["relation"] for n in notes)
 asr_validation=read(OUT/"audio/validation_summary.json",{})
 
+def profile_types(raw):
+    tokens=[TYPE_CORRECTIONS.get(t.strip().lower(),t.strip().lower()) for t in str(raw or "").split("/") if t.strip()]
+    return "/\n".join(t.capitalize() for t in tokens) or "н/д"
 def surname_first(name):
     given,_,family=name.partition(" ")
     return f"{family} {given}" if family else name
@@ -166,16 +177,16 @@ story.append(Paragraph("Репозиторий проекта: "+link(args.repos
 story.append(PageBreak())
 heading("Задача")
 add("Разработать комплекс синхронного анализа видео, речи и биосигналов и проверить возможность распознавания лжи с учётом профилей участников. В эксперименте участники намеренно изменяли часть ответов. Письменные истории служат правдивым эталоном для разметки.")
-add(f"Обработано {len(audios)} записей общей продолжительностью {num(sum(a.get('duration_s',0) for a in audios)/60,2)} мин. Сверено {review.get('stories_reviewed',len(sources))} историй. Подготовлены стенограммы с временными метками, показатели речи, ЭКГ и дыхания, видеопульс, кинематика и локальный интерфейс для просмотра результатов.")
+add(f"Обработано {len(audios)} записей общей продолжительностью {num(sum(a.get('duration_s',0) for a in audios)/60,2)} мин. Сверено {counted(review.get('stories_reviewed',len(sources)),'история','истории','историй')}. Подготовлены стенограммы с временными метками, показатели речи, ЭКГ и дыхания, видеопульс, кинематика и локальный интерфейс для просмотра результатов.")
 table("Результаты сверки устных ответов с письменными историями",["Результат сверки","Число сопоставлений"],[[relation[k],str(counts[k])] for k in relation],[365,130])
 add(f"Всего {len(notes)} записей сверки. Одна история может содержать несколько проверяемых утверждений. Для найденных ответов сохранены цитаты, вопрос и время на видео; отсутствующие пересказы отмечены отдельно.")
 heading("Материалы")
 table("Исходные материалы",["Материал","Объём"],[
  ["Видео",f"{len(videos)} записей; один ракурс"],
- ["Письменные истории",f"{len(sources)} историй; {research.get('source_documents',0)} исходных документов"],
- ["Диалоги",f"{sum(len(a.get('qa_candidates',[])) for a in audios)} пары «вопрос - ответ»"],
+ ["Письменные истории",f"{counted(len(sources),'история','истории','историй')}; {counted(research.get('source_documents',0),'исходный документ','исходных документа','исходных документов')}"],
+ ["Диалоги",counted(sum(len(a.get('qa_candidates',[])) for a in audios),'пара','пары','пар')+" «вопрос – ответ»"],
  ["БиоРадио",f"{len(bio)} записей; ЭКГ, RIP, GSR; контактный ФПГ в {len(ppg_records)} записи"],
- ["Вариабельность ритма",f"{total_windows} окон по 120 с с шагом 5 с"],
+ ["Вариабельность ритма",f"{counted(total_windows,'окно','окна','окон')} по 120 с с шагом 5 с"],
 ],[155,340])
 story.append(PageBreak())
 heading("Записи участников")
@@ -209,8 +220,8 @@ story.append(PageBreak())
 heading("Данные участников")
 profiles_table=table("Профили участников",["Участник","ИСУ","Естественный","Демонстрируемый","Выраженность"],[
  [names[pid],by_profile.get(pid,{}).get("tab_number") or "н/д",
-  by_profile.get(pid,{}).get("profile_natural_raw","").replace("/","/\n") or "н/д",
-  by_profile.get(pid,{}).get("profile_demonstrated_raw","").replace("/","/\n") or "н/д",
+  profile_types(by_profile.get(pid,{}).get("profile_natural_raw")),
+  profile_types(by_profile.get(pid,{}).get("profile_demonstrated_raw")),
   plain(by_profile.get(pid,{}).get("expression"))]
  for pid in order],[125,55,110,115,90])
 emotions_table=table("Эмоциональные показатели участников",["Участник","Эмоц+","Эмоц−","Эмоц_Баланс"],[
@@ -235,7 +246,7 @@ if ppg_records:
     story.append(PageBreak())
     heading("Контактный ФПГ и ЭКГ")
     add("Контактный ФПГ записан вместе с ЭКГ одним прибором. Сравнение использует общую шкалу отсчётов БиоРадио. Пульсовые интервалы рассчитаны после фильтрации и контроля качества.")
-    table("Сравнение контактного ФПГ и ЭКГ",["Участник","Окон ФПГ / прошли QC","Сравнено окон","MAE ЧСС, уд/мин"],[
+    table("Сравнение контактного ФПГ и ЭКГ",["Участник","Окон ФПГ / прошли контроль","Сравнено окон","MAE ЧСС, уд/мин"],[
         [names.get(b["subject_id"],b["subject_id"]),
          f"{b['ppg_analysis'].get('window_count','—')} / {b['ppg_analysis'].get('usable_ppg_windows','—')}",
          str(b.get("ecg_ppg_comparison",{}).get("paired_windows","—")),
@@ -287,7 +298,7 @@ elif asr_validation:
     for example in selected or examples[:3]:
         pid=example.get("participant_id") or example.get("recording_id","").split("_",1)[-1]
         add(f"{names.get(pid,pid)} · {timecode(example.get('start_s'))}: «{trim(example.get('before',''),100)}» → «{trim(example.get('after',''),150)}».","SmallRu")
-add("По аудиодорожкам извлечены основной тон и его изменчивость, энергия, паузы, доля звучащей речи, спектральный центр, наклон и форманты. Для пар «вопрос - ответ» рассчитаны задержка и длительность ответа, темп в словах/мин и оценка слогов/с по числу гласных. Для начального разделения голосов использованы представления WeSpeaker.")
+add("По аудиодорожкам извлечены основной тон и его изменчивость, энергия, паузы, доля звучащей речи, спектральный центр, наклон и форманты. Для пар «вопрос – ответ» рассчитаны задержка и длительность ответа, темп в словах/мин и оценка слогов/с по числу гласных. Для начального разделения голосов использованы представления WeSpeaker.")
 heading("Сопоставление с эталоном")
 add("Письменные истории сопоставлены с интервью по событию, действующему лицу, времени, действию и отрицанию. Короткие ответы рассмотрены вместе с предшествующим вопросом.")
 table("Категории сверки с письменным эталоном",["Категория","Критерий"],[[relation[k],v] for k,v in [
@@ -319,8 +330,9 @@ for pid in order:
         trial=trial_by_comparison.get(n["comparison_id"],{})
         start,end=trial.get("start_s",n.get("start_s")),trial.get("end_s",n.get("end_s"))
         add(f"{relation.get(n['relation'],n['relation'])} · {timecode(start)}–{timecode(end)}","Sub")
-        for evidence in group:
-            label=f"Эталон «{story_topic_title(evidence['story_title'])}»" if len(group)>1 else "Эталон"
+        quotes=list({(story_topic_title(e["story_title"]),trim(e.get("source_excerpt"),230)):e for e in group}.values())
+        for evidence in quotes:
+            label=f"Эталон «{story_topic_title(evidence['story_title'])}»" if len(quotes)>1 else "Эталон"
             add(f"{label}: «{trim(evidence.get('source_excerpt'),230)}»","SmallRu")
         if n.get("question_summary"):
             add(f"Смысл вопроса: {trim(n['question_summary'],230)}","SmallRu")
@@ -348,39 +360,39 @@ feature_counts={key:sum(num(row.get(key))!="н/д" for row in trial_features) fo
     "bio_ecg_hr_bpm_context120s", "bio_rip_rate_bpm_context120s"]}
 add(f"Для проверки моделей отобраны {dataset['trials']} полных ответов с метками по письменному эталону: соответствий — {dataset['agreements']}, несоответствий — {dataset['contradictions']}. Оба класса представлены у всех {dataset['participants']} участников. Единица анализа — один ответ; при нескольких проверяемых утверждениях достаточно одного несоответствия для метки 1.")
 add("Проверка LOPO каждый раз исключает из обучения целиком одного участника [3]. Заполнение пропусков и масштабирование обучаются только на остальных. L2-логистическая регрессия: C = 0,1, порог 0,5, без подбора параметров. Участники имеют равный вес при обучении и расчёте метрик.","SmallRu")
-add("Речевые признаки: основной тон, его разброс, уровень сигнала, темп и доля пауз. Видеопризнаки: скорость головы, движение торса, раскрытие глаз и движение рта. BioRadio: ЧСС, RMSSD ЭКГ и частота RIP в 120-секундном контексте ответа.","SmallRu")
+add("Речевые признаки: основной тон, его разброс, уровень сигнала, темп и доля пауз. Видеопризнаки: скорость головы, движение торса, раскрытие глаз и движение рта. БиоРадио: ЧСС, RMSSD ЭКГ и частота RIP в 120-секундном контексте ответа.","SmallRu")
 add(f"До заполнения пропусков основной тон доступен для {feature_counts['audio_pitch_median_hz']} ответов, движение головы — для {feature_counts['video_head_speed_norm_per_s']}, рта — для {feature_counts['video_mouth_motion_ratio_per_s']}, ЧСС ЭКГ — для {feature_counts['bio_ecg_hr_bpm_context120s']}, частота RIP — для {feature_counts['bio_rip_rate_bpm_context120s']}.","SmallRu")
 add("Профили включают выраженность, Эмоц+, Эмоц− и отдельные признаки наличия компонентов естественного и демонстрируемого типа. Эмоциональный баланс используется в корреляциях. Имена, ИСУ и тексты вопросов и эталонов в признаки моделей не входят.","SmallRu")
-table("Качество моделей при проверке LOPO",["Модель","Brier","95% ДИ Brier","Сбаланс. точность","ROC AUC"],[
- [row["name"],num(row["metrics"].get("brier"),3),
+table("Качество моделей при проверке LOPO",["Модель","Brier","95 % ДИ Brier","Сбаланс. точность","ROC AUC"],[
+ [model_name(row["name"]),num(row["metrics"].get("brier"),3),
   f"[{num(row['metrics'].get('brier_ci_low'),3)}; {num(row['metrics'].get('brier_ci_high'),3)}]",
   num(row["metrics"].get("balanced_accuracy"),3),num(row["metrics"].get("roc_auc"),3)]
  for row in model_rows],[185,50,100,85,75])
-add(f"Brier — средняя квадратичная ошибка вероятности; меньше лучше. Сбалансированная точность — среднее чувствительности и специфичности; ROC AUC — качество ранжирования ответов. Для последних двух метрик случайный уровень равен 0,5. 95% ДИ рассчитаны bootstrap по участникам ({increment.get('bootstrap',5000)} повторов) при фиксированных прогнозах LOPO, без повторного обучения.","SmallRu")
-add(f"Среди проверенных наборов наименьшая ошибка у видеопризнаков: Brier {num(model_metrics['video']['brier'],4)} против {num(model_metrics['prior']['brier'],4)} у прогноза по доле классов. Однако ROC AUC = {num(model_metrics['video']['roc_auc'],3)}, а сбалансированная точность = {percent(model_metrics['video']['balanced_accuracy'])}: разделение ответов осталось около случайного уровня.","SmallRu")
+add(f"Brier — средняя квадратичная ошибка вероятности; меньше лучше. Сбалансированная точность — среднее чувствительности и специфичности; ROC AUC — качество ранжирования ответов. Для последних двух метрик случайный уровень равен 0,5. 95 % ДИ рассчитаны bootstrap по участникам ({increment.get('bootstrap',5000)} повторов) при фиксированных прогнозах LOPO, без повторного обучения.","SmallRu")
+add(f"Среди проверенных наборов наименьшая ошибка у видеопризнаков: Brier {num(model_metrics['video']['brier'],3)} против {num(model_metrics['prior']['brier'],3)} у прогноза по доле классов. Однако ROC AUC = {num(model_metrics['video']['roc_auc'],3)}, а сбалансированная точность = {percent(model_metrics['video']['balanced_accuracy'])}: разделение ответов осталось около случайного уровня.","SmallRu")
 
 story.append(PageBreak())
 heading("Вклад профилей и биосигналов")
 fig=OUT/"research/multimodal/model_comparison.png"
 if not fig.exists():raise SystemExit(f"Missing analysis figure: {fig}")
 figure(fig,"Ошибка на исключённых участниках и изменение при добавлении профилей. Ромбы показывают средние; отдельные точки отражают участников")
-add(f"Добавление профилей к видео и речи изменило Brier на {num(increment['delta_brier'],4)}; 95% ДИ [{num(increment['ci_low'],4)}; {num(increment['ci_high'],4)}]. Положительная разность означает рост ошибки. Интервал включает ноль; преимущество профилей не установлено.","SmallRu")
+add(f"Добавление профилей к видео и речи изменило Brier на {num(increment['delta_brier'],4)}; 95 % ДИ [{num(increment['ci_low'],4)}; {num(increment['ci_high'],4)}]. Положительная разность означает рост ошибки. Интервал включает ноль; преимущество профилей не установлено.","SmallRu")
 classified=model_metrics['av_profiles']['confusion_counts']
-add(f"Модель «видео + речь + профили» обнаружила {classified['tp']} из {dataset['contradictions']} несоответствий, пропустила {classified['fn']} и дала {classified['fp']} ложных срабатывания. Добавление BioRadio снизило Brier с {num(model_metrics['av']['brier'],4)} до {num(model_metrics['fusion']['brier'],4)}, но ROC AUC осталось {num(model_metrics['fusion']['roc_auc'],3)}. Объединение каналов не обеспечило распознавания.","SmallRu")
+add(f"Модель «видео + речь + профили» обнаружила {classified['tp']} из {dataset['contradictions']} {plural(dataset['contradictions'],'несоответствия','несоответствий','несоответствий')}, пропустила {classified['fn']} и дала {counted(classified['fp'],'ложное срабатывание','ложных срабатывания','ложных срабатываний')}. Добавление БиоРадио снизило Brier с {num(model_metrics['av']['brier'],3)} до {num(model_metrics['fusion']['brier'],3)}, но ROC AUC осталось {num(model_metrics['fusion']['roc_auc'],3)}. Объединение каналов не обеспечило распознавания.","SmallRu")
 add("Проверена чувствительность результатов к временному совмещению: расчёт повторён на нижней и верхней границах интервалов автоматического смещения при scale = 1.","SmallRu")
-table("Чувствительность моделей к границам смещения",["Граница смещения","Расширение AV","Brier","ROC AUC"],[
- [scenario["name"],"BioRadio + профили" if row["id"]=="fusion_profiles" else "BioRadio",
-  num(row["metrics"].get("brier"),4),num(row["metrics"].get("roc_auc"),3)]
+table("Чувствительность моделей к границам смещения",["Граница смещения","Модель","Brier","ROC AUC"],[
+ [scenario["name"],model_name(row["name"]),
+  num(row["metrics"].get("brier"),3),num(row["metrics"].get("roc_auc"),3)]
  for scenario in multimodal["sync_sensitivity"] for row in scenario["models"]],[145,170,90,90])
-add(f"При обоих смещениях ROC AUC остаётся ниже 0,5. Для полного набора каналов добавление профилей даёт Δ Brier = {num(fusion_increment['delta_brier'],6)}, 95% ДИ [{num(fusion_increment['ci_low'],4)}; {num(fusion_increment['ci_high'],4)}]; улучшение также не установлено.","SmallRu")
+add(f"При обоих смещениях ROC AUC остаётся ниже 0,5. Для полного набора каналов добавление профилей даёт Δ Brier = {num(fusion_increment['delta_brier'],6)}, 95 % ДИ [{num(fusion_increment['ci_low'],4)}; {num(fusion_increment['ci_high'],4)}]; улучшение также не установлено.","SmallRu")
 
 story.append(PageBreak())
 heading("Связи профилей с измерениями")
 families=multimodal["association_families"]
 associations=multimodal["associations"]
 estimated=sum(row.get("rho") is not None for row in associations)
-add(f"Сопоставлены профили и показатели за всю запись. Единица анализа — участник, n = {dataset['participants']}. Заданы {families['primary']} основных сочетаний (выраженность и эмоциональный баланс с 6 признаками) и {families['secondary']} дополнительных. Коэффициент Спирмена, точные двусторонние перестановки рангов, поправка Холма отдельно в каждом семействе; 95% ДИ — парный bootstrap участников [4].","SmallRu")
-add(f"Рассчитаны {estimated} из {len(associations)} сочетаний; остальные не набрали минимум 6 пригодных участников или вариативных значений. Для ЭКГ, RIP и rPPG требуется не менее 20% пригодных окон записи. После поправки Холма статистически значимых связей не обнаружено (p < 0,05).","SmallRu")
+add(f"Сопоставлены профили и показатели за всю запись. Единица анализа — участник, n = {dataset['participants']}. Заданы {families['primary']} основных сочетаний (выраженность и эмоциональный баланс с 6 признаками) и {families['secondary']} дополнительных. Коэффициент Спирмена, точные двусторонние перестановки рангов, поправка Холма отдельно в каждом семействе; 95 % ДИ — парный bootstrap участников [4].","SmallRu")
+add(f"Рассчитаны {estimated} из {len(associations)} сочетаний; остальные не набрали минимум 6 пригодных участников или вариативных значений. Для ЭКГ, RIP и rPPG требуется не менее 20 % пригодных окон записи. После поправки Холма статистически значимых связей не обнаружено (p < 0,05).","SmallRu")
 fig=OUT/"research/multimodal/associations.png"
 if not fig.exists():raise SystemExit(f"Missing analysis figure: {fig}")
 figure(fig,f"Все {families['primary']} основных сочетаний. Одна точка соответствует одному участнику; подписи содержат n, коэффициент Спирмена и p Холма",max_height=540)
@@ -408,7 +420,8 @@ table("Файлы результатов",["Путь в проекте","Сод�
  ["outputs/research/content_comparison.csv","Сопоставления с цитатами, контекстом и временем"],
  ["outputs/research/multimodal/analysis-results.zip","Полный анализ: CSV, графики, план, происхождение, параметры и код"],
  ["outputs/research/multimodal/associations.csv","Все корреляции: n, rho, p, поправка Холма и интервалы"],
- ["outputs/research/multimodal/participant_features.csv\noutputs/research/multimodal/trial_features.csv","Показатели по участникам и отдельным ответам"],
+ ["outputs/research/multimodal/participant_features.csv","Показатели участников за всю запись"],
+ ["outputs/research/multimodal/trial_features.csv","Показатели отдельных ответов"],
  ["outputs/research/multimodal/model_predictions.csv","Прогнозы LOPO для воспроизведения оценок"],
  ["outputs/audio/","Стенограммы, временные метки, акустические признаки"],
  ["outputs/bio/","ЭКГ, ФПГ, RIP, GSR, интервалы и показатели ВСР"],
