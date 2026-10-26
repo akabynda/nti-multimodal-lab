@@ -8,6 +8,7 @@ import argparse
 import json
 import csv
 import math
+import pandas as pd
 from collections import Counter
 from xml.sax.saxutils import escape
 from reportlab.pdfgen import canvas
@@ -23,6 +24,7 @@ from reportlab.lib.pagesizes import A4
 from nti_lab.palette import BLUE, INK, MUTED, LINE, SURFACE, WHITE
 from nti_lab.story_topics import story_topic_title
 from nti_lab.multimodal_analysis import TYPE_CORRECTIONS
+from nti_lab import session_summary as summary_lib
 
 TITLE="Мультимодальное распознавание лжи на основе синхронного анализа видеоряда, аудиопотока и БОС"
 ROOT=Path(__file__).resolve().parents[1]
@@ -148,7 +150,8 @@ def trim(t,n=240):
 def decimal(text):
     return text.replace(".",",").replace("-","−")
 def num(v,d=1):
-    try:return decimal(f"{float(v):.{d}f}") if math.isfinite(float(v)) else "н/д"
+    # Adding 0.0 turns a rounded negative zero into zero.
+    try:return decimal(f"{round(float(v),d)+0.0:.{d}f}") if math.isfinite(float(v)) else "н/д"
     except (TypeError,ValueError):return "н/д"
 def plain(v):
     try:return decimal(f"{float(v):g}") if math.isfinite(float(v)) else "н/д"
@@ -193,6 +196,26 @@ gsr_review_count=sum(b.get("gsr_quality",{}).get("status")=="flat_or_out_of_rang
 relation={"consistent":"Согласуется с эталоном","different":"Дополнительные сведения","omitted":"Не рассказано","uncertain":"Неоднозначный ответ","contradiction_candidate":"Несоответствие эталону"}
 counts=Counter(n["relation"] for n in notes)
 asr_validation=read(OUT/"audio/validation_summary.json",{})
+summaries={}
+for a in audios:
+    rid,pid=a["recording_id"],a["participant_id"]
+    video=by_video.get(pid,{})
+    row={"recording_id":rid,"participant_id":pid}
+    if (OUT/"bio"/pid/"metrics.csv").exists():
+        row.update(summary_lib.hrv_summary(pd.read_csv(OUT/"bio"/pid/"metrics.csv")))
+    if (OUT/"audio"/f"{rid}.features.csv").exists():
+        row.update(summary_lib.speech_summary(a,pd.read_csv(OUT/"audio"/f"{rid}.features.csv")))
+    if (OUT/"video"/f"{rid}.kinematics.csv").exists():
+        row.update(summary_lib.kinematics_summary(pd.read_csv(OUT/"video"/f"{rid}.kinematics.csv"),video.get("overlays",[])))
+    stages=summary_lib.session_stages(a,by_alignment.get(pid,{}).get("baselines",[]))
+    row.update(stages=stages,neutral_answers=len(stages["neutral_answers"]),topic_blocks=len(stages["blocks"]))
+    summaries[pid]=row
+(OUT/"report").mkdir(parents=True,exist_ok=True)
+pd.DataFrame([{k:v for k,v in row.items() if k!="stages"} for row in summaries.values()]).to_csv(
+    OUT/"report/session_summary.csv",index=False,encoding="utf-8-sig")
+def summary(pid,key,d=1,scale=1):
+    value=summaries.get(pid,{}).get(key)
+    return num(value*scale if value is not None else None,d)
 
 def profile_types(raw):
     tokens=[TYPE_CORRECTIONS.get(t.strip().lower(),t.strip().lower()) for t in str(raw or "").split("/") if t.strip()]
@@ -291,6 +314,20 @@ for pid in order:
     if by_profile.get(pid,{}).get("profile_link_status")=="requested_id_not_found":
         add(f"{names[pid]}: ИСУ {by_profile[pid]['tab_number']} в исходной таблице отсутствует.","SmallRu")
 add(f"Источник таблиц {profiles_table} и {emotions_table}: Результаты.xlsx, сопоставление по номеру ИСУ.","SmallRu")
+subheading("Этапы сессии")
+add("Сессия состоит из начального фона с закрытыми глазами (2 мин), диалога и конечного фона. Границы фонов найдены по речевой инструкции интервьюера и раскрытию глаз (раздел 2). Диалог — пары «вопрос – ответ» между концом начального и началом конечного фона.")
+add("Тематический блок задаётся по двум последним предложениям вопроса: первое совпадение с ключевыми основами темы истории (профессия, экзамен, достижения, алкоголь, обман, конфликт, летний день, нерешённая проблема) или нейтральных вопросов (о себе, увлечения, самочувствие). Вопрос без совпадения продолжает текущий блок. Ответы нейтрального блока используются как «База» (раздел 7).")
+def stage_span(stages,name):
+    item=next((b for b in stages["baselines"] if b["name"]==name),None)
+    return f"{num(item['start_s'],0)}–{num(item['end_s'],0)}" if item else "н/д"
+stages_table=table("Этапы сессии, с от начала видео",["Участник","Начальный фон","Диалог","Конечный фон","Блоков","Ответов «База»"],[
+ [f"P{i+1:02}",stage_span(summaries[pid]["stages"],"beginning"),
+  f"{num(summaries[pid]['stages']['dialogue_start_s'],0)}–{num(summaries[pid]['stages']['dialogue_end_s'],0)}",
+  stage_span(summaries[pid]["stages"],"ending"),str(summaries[pid]["topic_blocks"]),str(summaries[pid]["neutral_answers"])]
+ for i,pid in enumerate(order)],[70,95,95,95,60,80])
+table("Последовательность тематических блоков",["Участник","Блоки по порядку"],[
+ [f"P{i+1:02}"," → ".join(b["topic"] or "Без темы" for b in summaries[pid]["stages"]["blocks"])]
+ for i,pid in enumerate(order)],[70,425])
 story.append(PageBreak())
 heading("Синхронизация")
 add("БиоРадио запускали перед видеозаписью и останавливали после неё. Поэтому длительность БОС больше длительности видео. Разница задаёт допустимый диапазон опережения прибора: от 0 до LБОС − Lвидео.")
@@ -319,6 +356,14 @@ table("Окна ВСР и контроль качества ЭКГ",["Участ
  [f"P{i+1:02}",str(by_bio.get(pid,{}).get("window_count","—")),str(by_bio.get(pid,{}).get("usable_ecg_windows","—")),num(by_bio.get(pid,{}).get("median_hr_bpm"))]
  for i,pid in enumerate(order)],[80,110,145,160])
 figure(OUT/"bio/aggregate_summary.png","Качество ЭКГ и описательные показатели по участникам",intro="Доля пригодных окон и распределения показателей ЭКГ приведены на рисунке {n}.")
+hrv_table=table("Показатели ВСР по ЭКГ: медианы окон, прошедших контроль",["ID","ЧСС, уд/мин","SDNN, мс","RMSSD, мс","pNN50, %","VLF, мс²","LF, мс²","HF, мс²","LF/HF","Общая мощность, мс²"],[
+ [f"P{i+1:02}",summary(pid,"hr_bpm"),summary(pid,"sdnn_ms"),summary(pid,"rmssd_ms"),summary(pid,"pnn50_pct"),
+  summary(pid,"vlf_ms2",0),summary(pid,"lf_ms2",0),summary(pid,"hf_ms2",0),summary(pid,"lf_hf",2),summary(pid,"total_ms2",0)]
+ for i,pid in enumerate(order)],[42,47,44,47,44,48,52,48,40,83])
+add(f"Временные показатели — медианы окон с ecg_quality = usable_automatic; спектральные — медианы тех же окон с рассчитанным спектром. ULF не рассчитывается: окно 120 с короче периода ULF (> 300 с).","SmallRu")
+table("Частота дыхания по поясу RIP",["Участник","Окон с периодическим дыханием","ЧДД RIP, /мин"],[
+ [f"P{i+1:02}",str(summaries[pid].get("rip_windows","н/д")),summary(pid,"rip_rate_bpm")] for i,pid in enumerate(order)],[80,250,165])
+add("ЧДД RIP — медиана окон 120 с со статусом RIP_periodic_candidate (доминирующая частота пояса RIP с достаточной периодичностью).","SmallRu")
 add(f"В {gsr_review_count} из {len(bio)} записей GSR обнаружены плоские участки или значения вне рабочего диапазона. Эти данные сохранены с отметкой качества.")
 if ppg_records:
     subheading("Контактный ФПГ и ЭКГ")
@@ -349,6 +394,24 @@ for i,pid in enumerate(order):
 table("Покрытие лица, видеопульс и дыхательное движение",["Участник","Кадры с ROI","Окна: всего / ЧСС / пары ЭКГ","MAE ЧСС, уд/мин","MAE дыхания, /мин"],rows,[60,85,140,95,115])
 add(f"MAE — средняя абсолютная разность частот: видеопульс сопоставлен с ЭКГ, движение плеч — с RIP. Использованы автоматические смещения из таблицы {sync_table} и окна с допустимым качеством; n — число пар дыхательных оценок.","SmallRu")
 figure(OUT/"audit/video_quality.png","Доля кадров с лицевыми областями и доля окон с рассчитанной ЧСС rPPG",intro="Покрытие лицевыми областями и доля окон с оценкой ЧСС по записям показаны на рисунке {n}.")
+subheading("Кинематика тела, головы и конечностей")
+add(f"Точки тела получены MediaPipe Pose Landmarker {cite('mediapipe')} с частотой до 5 Гц, лицевые ориентиры — с частотой анализа 12,5 Гц. Точка учитывается при видимости > 0,6. Часть тела без видимых точек пропускается; расчёт остальных показателей продолжается. Координаты нормированы на размер кадра.")
+for item in ["наклон оси корпуса — угол отрезка от середины таза к середине плеч относительно вертикали, град; положительный — наклон вправо в кадре;",
+             "смещение центра корпуса — межквартильный размах горизонтальной координаты середины плеч и таза, % ширины кадра;",
+             "кивки и повороты головы — колебания вертикальной и горизонтальной координаты кончика носа в полосе 0,3–3 Гц: частота максимума спектра Уэлча скорости и среднеквадратичная амплитуда смещения, % кадра; используются непрерывные участки с лицом не короче 20 с;",
+             "наклон головы вбок — межквартильный размах угла линии внешних углов глаз, град;",
+             "скорость кистей — медиана модуля скорости середины запястий, % кадра/с;",
+             "кисть у лица (самоадаптер) — доля кадров позы, в которых запястье ближе к носу, чем 0,8 ширины плеч;",
+             "скрещённые руки или ноги — доля кадров, в которых оба запястья (обе лодыжки) находятся по разные стороны от средней линии плеч (таза), противоположные своей стороне; при менее чем 10 кадрах с видимыми точками доля не рассчитывается."]:
+    add("– "+item,"ListRu")
+table("Поза и корпус",["Участник","Видимость стоп","Наклон корпуса: медиана, град","Наклон корпуса: IQR, град","Смещение центра, %","Скрещённые руки, %","Скрещённые ноги, %"],[
+ [f"P{i+1:02}",percent(summaries[pid].get("feet_visible_fraction")),summary(pid,"torso_tilt_median_deg"),summary(pid,"torso_tilt_iqr_deg"),
+  summary(pid,"centre_shift_iqr",2,100),summary(pid,"crossed_arms_fraction",1,100),summary(pid,"crossed_legs_fraction",1,100)]
+ for i,pid in enumerate(order)],[55,65,80,75,70,75,75])
+table("Голова и кисти",["ID","Кивки: частота, Гц","Кивки: амплитуда, %","Повороты: частота, Гц","Повороты: амплитуда, %","Наклон вбок: IQR, град","Скорость кистей, %/с","Кисть у лица, %"],[
+ [f"P{i+1:02}",summary(pid,"nod_frequency_hz",2),summary(pid,"nod_rms",2,100),summary(pid,"turn_frequency_hz",2),summary(pid,"turn_rms",2,100),
+  summary(pid,"head_roll_iqr_deg"),summary(pid,"hand_speed_median",2,100),summary(pid,"hand_to_face_fraction",1,100)]
+ for i,pid in enumerate(order)],[52,60,62,62,64,62,63,70])
 story.append(PageBreak())
 heading("Речевой анализ")
 subheading("Распознавание речи и проверка стенограмм")
@@ -377,7 +440,17 @@ elif asr_validation:
     for example in selected or examples[:3]:
         pid=example.get("participant_id") or example.get("recording_id","").split("_",1)[-1]
         add(f"{names.get(pid,pid)} · {timecode(example.get('start_s'))}: «{trim(example.get('before',''),100)}» → «{trim(example.get('after',''),150)}».","SmallRu")
+subheading("Речевые и акустические показатели")
 add(f"По аудиодорожкам извлечены основной тон и его изменчивость, энергия, паузы, доля звучащей речи, спектральный центр, наклон и форманты; основной тон и форманты рассчитаны Praat через Parselmouth {cite('parselmouth')}. Для пар «вопрос – ответ» рассчитаны задержка и длительность ответа, темп в словах/мин и оценка слогов/с по числу гласных. Для начального разделения голосов использованы представления WeSpeaker ResNet34 {cite('wespeaker')} и кластеризация KMeans на два диктора.")
+add("Латентность — интервал от конца последней реплики вопроса до начала ответа; отрицательные значения (перебивание) исключены. Темп рассчитан по всем репликам респондента: слова и гласные буквы текста, делённые на суммарную длительность реплик. Акустика — медианы окон 5 с с шагом 1 с, центр которых лежит в реплике респондента, при доле вокализованных отсчётов ≥ 0,2.")
+table("Временные параметры диалога",["Участник","Пар «вопрос – ответ»","Латентность: медиана, с","Латентность: IQR, с","Длительность ответа: медиана, с","Слов/мин","Слогов/с"],[
+ [f"P{i+1:02}",str(summaries[pid].get("qa_pairs","н/д")),summary(pid,"latency_median_s",2),summary(pid,"latency_iqr_s",2),
+  summary(pid,"answer_median_s",2),summary(pid,"words_per_min",0),summary(pid,"syllables_per_s",2)]
+ for i,pid in enumerate(order)],[55,70,75,70,85,65,75])
+table("Акустические характеристики голоса",["ID","F0: медиана, Гц","F0: IQR, Гц","Уровень, dBFS","Центр спектра, Гц","Наклон спектра, дБ/окт","F1, Гц","F2, Гц","F3, Гц"],[
+ [f"P{i+1:02}",summary(pid,"pitch_median_hz",0),summary(pid,"pitch_iqr_hz",0),summary(pid,"rms_dbfs"),summary(pid,"spectral_centroid_hz",0),
+  summary(pid,"spectral_tilt_db_per_octave",2),summary(pid,"f1_median_hz",0),summary(pid,"f2_median_hz",0),summary(pid,"f3_median_hz",0)]
+ for i,pid in enumerate(order)],[50,52,48,52,65,70,50,50,58])
 story.append(PageBreak())
 heading("Разметка ответов")
 subheading("Сопоставление с письменным эталоном")
@@ -509,6 +582,7 @@ table("Файлы результатов",["Путь в проекте","Сод�
  ["outputs/research/multimodal/participant_features.csv","Показатели участников за всю запись"],
  ["outputs/research/multimodal/trial_features.csv","Показатели отдельных ответов"],
  ["outputs/research/multimodal/model_predictions.csv","Прогнозы LOPO для воспроизведения оценок"],
+ ["outputs/report/session_summary.csv","Сводные показатели ВСР, речи и кинематики по записям (таблицы раздела 1.4, 3–5)"],
  ["outputs/audio/","Стенограммы, временные метки, акустические признаки"],
  ["outputs/bio/","ЭКГ, ФПГ, RIP, GSR, интервалы и показатели ВСР"],
  ["outputs/video/","Лицевые области, rPPG и кинематика"],
