@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "outputs"
 sys.path.insert(0, str(ROOT / "src"))
-from nti_lab.palette import BLUE, PLOT_STYLE, RED
+from nti_lab.palette import BLUE, PLOT_STYLE, RED, decimal_comma
 
 
 def load(path):
@@ -34,6 +34,7 @@ def plot_video_quality(folder, rows):
         ax.legend(loc="lower left",bbox_to_anchor=(0,1.01),frameon=False,ncol=1)
         ax.grid(axis="x",alpha=1)
         ax.set_axisbelow(True)
+        decimal_comma(fig)
         fig.savefig(folder/"video_quality.png",dpi=180)
         fig.savefig(folder/"video_quality.svg")
         plt.close(fig)

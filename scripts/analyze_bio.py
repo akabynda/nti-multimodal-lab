@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pandas as pd
 from nti_lab.biosignals import analyze_recording, read_session
-from nti_lab.palette import BLUE, PLOT_STYLE, RED
+from nti_lab.palette import BLUE, PLOT_STYLE, RED, decimal_comma
 
 
 def aggregate_plot(output, summaries):
@@ -57,6 +57,7 @@ def aggregate_plot(output, summaries):
         for ax in axes:
             ax.grid(axis="x", alpha=1)
         fig.suptitle(f"БиоРадио: {len(data)} участников · окна 120 с · шаг 5 с", fontsize=11)
+        decimal_comma(fig)
         fig.savefig(output / "aggregate_summary.png", dpi=180, facecolor="white")
         fig.savefig(output / "aggregate_summary.svg", facecolor="white")
         plt.close(fig)

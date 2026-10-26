@@ -572,7 +572,7 @@ def _plot_contact_ppg(out, arrays, comparison):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from .palette import BLUE, MUTED, PLOT_STYLE, VIOLET
+    from .palette import BLUE, MUTED, PLOT_STYLE, VIOLET, decimal_comma
     with plt.rc_context(PLOT_STYLE):
         fig, axes = plt.subplots(3, 1, figsize=(11, 8), layout="constrained")
         use = (arrays["ppg_t_s"] >= 30) & (arrays["ppg_t_s"] < 40)
@@ -599,6 +599,7 @@ def _plot_contact_ppg(out, arrays, comparison):
                     title=f"Прошедшие контроль окна: {int(good.sum())}; длительность 120 с, шаг 5 с")
         for ax in axes:
             ax.grid(alpha=1)
+        decimal_comma(fig)
         fig.savefig(out / "ecg_ppg_comparison.png", dpi=160)
         plt.close(fig)
 

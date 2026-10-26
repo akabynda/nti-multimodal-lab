@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 from nti_lab import multimodal_analysis as analysis
 from nti_lab.multimodal_features import (extract_session_features, extract_trial_features,
                                         SESSION_FEATURE_COLUMNS, FEATURE_COLUMNS)
-from nti_lab.palette import PLOT_STYLE, BLUE, INK, MUTED, LINE
+from nti_lab.palette import PLOT_STYLE, BLUE, INK, MUTED, LINE, decimal_comma
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "outputs/research/multimodal"
@@ -96,9 +96,10 @@ def figures(frame, associations, models, increment):
             ax.margins(.13)
             ax.set_xlabel(row["profile_label"], fontsize=8)
             ax.set_ylabel(row["feature_label"].replace(", ", "\n", 1), fontsize=8)
-            ax.set_title(f"ρ={number(row['rho'],2)} · n={row['n']} · p Holm={number(row['p_holm'],2)}", fontsize=8)
+            ax.set_title(f"ρ={number(row['rho'],2)} · n={row['n']} · p Холма={number(row['p_holm'],2)}".replace(".", ","), fontsize=8)
             ax.grid(axis="y", alpha=.45)
-        fig.suptitle("Анкеты и измеренные признаки · одна точка — один участник", fontsize=12)
+        fig.suptitle("Профили и измеренные признаки · одна точка — один участник", fontsize=12)
+        decimal_comma(fig)
         for extension in ("png", "svg"):
             fig.savefig(OUT/f"associations.{extension}", dpi=300, metadata={"Creator": "nti-lab analyze_multimodal.py"})
         plt.close(fig)
@@ -110,7 +111,7 @@ def figures(frame, associations, models, increment):
             ax.scatter(values, np.full(len(values), i), s=12, color=MUTED, alpha=.3, zorder=1)
             ax.errorbar(metrics["brier"], i, xerr=[[metrics["brier"]-metrics["brier_ci_low"]],
                 [metrics["brier_ci_high"]-metrics["brier"]]], color=color, fmt="D", markersize=4, capsize=3, zorder=2)
-        ax.set_yticks(range(len(models)), [m["name"] for m in models], fontsize=8)
+        ax.set_yticks(range(len(models)), [m["name"].replace("BioRadio", "БиоРадио").replace("анкета", "профили") for m in models], fontsize=8)
         ax.invert_yaxis()
         ax.set_xlim(0, 1)
         ax.set_xlabel("Brier · меньше — лучше")
@@ -122,10 +123,11 @@ def figures(frame, associations, models, increment):
         right.set_yticks(range(len(items)), [codes[k] for k, _ in items])
         right.invert_yaxis()
         right.axvline(0, color=MUTED, linewidth=.8)
-        right.set_title("Добавление анкеты к видео и речи", fontsize=11)
-        right.set_xlabel("Δ Brier = с анкетой − без анкеты\nОтрицательные значения — улучшение")
+        right.set_title("Добавление профилей к видео и речи", fontsize=11)
+        right.set_xlabel("Δ Brier = с профилями − без профилей\nОтрицательные значения — улучшение")
         right.grid(axis="x", alpha=.4)
-        fig.suptitle("Точки слева — участники; ромбы и интервалы — среднее и условный 95% bootstrap ДИ", fontsize=9)
+        fig.suptitle("Точки слева — участники; ромбы и интервалы — среднее и условный 95 % bootstrap ДИ", fontsize=9)
+        decimal_comma(fig)
         for extension in ("png", "svg"):
             fig.savefig(OUT/f"model_comparison.{extension}", dpi=300, metadata={"Creator": "nti-lab analyze_multimodal.py"})
         plt.close(fig)
