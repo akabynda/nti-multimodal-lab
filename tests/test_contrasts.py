@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 
-from nti_lab.contrasts import (ANOMALY, Z_LIMIT, group_difference_test, hypothesis_tests, normalize,
+from nti_lab.contrasts import (ANOMALY, Z_LIMIT, dialogue_features, group_difference_test, hypothesis_tests, normalize,
                                participant_contrasts, sign_flip_test)
 
 
@@ -57,3 +57,24 @@ def test_hypothesis_tests_adjust_each_family():
     assert tests.loc["a", "h1_p"] == 2 / 512
     assert tests.loc["a", "h1_p_holm"] == min(1, 2 * tests.loc["a", "h1_p"])
     assert np.isclose(tests.loc["a", "h3_rho"], 1)
+
+
+def test_dialogue_features_use_respondent_turns_of_answer():
+    segments = {"recording_id": "R", "turns": [
+        {"id": 1, "start": 0, "end": 2, "speaker_role": "interviewer", "text": "вопрос"},
+        {"id": 2, "start": 3, "end": 5, "speaker_role": "respondent", "text": "мама мыла"},
+        {"id": 3, "start": 5, "end": 6, "speaker_role": "interviewer", "text": "ага"},
+        {"id": 4, "start": 6, "end": 8, "speaker_role": "respondent", "text": "раму"}],
+        "qa_candidates": [{"question_segment_id": 1, "answer_segment_id": 2, "latency_s": 1.0, "answer_turn_ids": [2, 3, 4]},
+                          {"question_segment_id": 5, "answer_segment_id": 6, "latency_s": -.3, "answer_turn_ids": []}]}
+    result = dialogue_features(segments)
+    assert result["R:q1:a2"] == {"audio_latency_s": 1.0, "audio_syllables_per_s": 6 / 4}
+    assert np.isnan(result["R:q5:a6"]["audio_latency_s"]) and np.isnan(result["R:q5:a6"]["audio_syllables_per_s"])
+
+
+def test_expected_direction_count():
+    contrasts = pd.DataFrame([dict(participant_id=f"P{i}", feature="audio_latency_s", contrast=v)
+                              for i, v in enumerate([1, 2, -1, 3, 1, 1, -2, 1, 1])])
+    profiles = pd.DataFrame(dict(participant_id=[f"P{i}" for i in range(9)], expression=range(9), group=[1] * 6 + [0] * 3))
+    row = hypothesis_tests(contrasts, profiles, "group").iloc[0]
+    assert row.expected == 1 and row.n_expected_direction == 7

@@ -12,14 +12,44 @@ from itertools import combinations, product
 import numpy as np
 import pandas as pd
 
+from .audio import words_and_syllables
 from .multimodal_analysis import AUDIO, VIDEO, SEED, BOOTSTRAPS, exact_spearman, holm
 
-CONTRAST_FEATURES = AUDIO + VIDEO + ["bio_ecg_hr_bpm_context120s", "bio_ecg_rmssd_ms_context120s"]
+DIALOGUE = ["audio_latency_s", "audio_syllables_per_s"]
+CONTRAST_FEATURES = DIALOGUE + AUDIO + VIDEO + ["bio_ecg_hr_bpm_context120s", "bio_ecg_rmssd_ms_context120s"]
 ANOMALY = "audio_anomaly_norm"
+# Direction expected for «Ложь» relative to «Правда» in the cited literature (+1 increase, −1 decrease).
+# It is reported next to the observed contrast; the H1 test itself is two-sided.
+EXPECTED = {
+    "audio_latency_s": (1, "vrij"), "audio_vad_pause_fraction": (1, "vrij"),
+    "audio_text_rate_wpm": (-1, "vrij"), "audio_syllables_per_s": (-1, "vrij"),
+    "audio_pitch_median_hz": (1, "depaulo"), "video_head_speed_norm_per_s": (-1, "vrij"),
+    "video_torso_motion_deg_per_s": (-1, "vrij"), "bio_ecg_hr_bpm_context120s": (1, "vrij"),
+    "bio_ecg_rmssd_ms_context120s": (-1, "hrv"), ANOMALY: (1, None),
+}
 MIN_BASE = 2
 MIN_SCALE = 4
 MIN_GROUP = 3
 Z_LIMIT = 5.
+
+
+def dialogue_features(segments: dict) -> dict[str, dict]:
+    """Latency and syllable rate of every QA answer keyed by `<recording>:q<id>:a<id>`.
+
+    Latency — `latency_s` of the pair, NaN when negative (overlap). Syllable rate —
+    vowel letters of the respondent turns of the answer / their summed duration.
+    """
+    turns = {t["id"]: t for t in segments.get("turns", [])}
+    result = {}
+    for qa in segments.get("qa_candidates", []):
+        own = [turns[i] for i in qa.get("answer_turn_ids", []) if i in turns and turns[i].get("speaker_role") == "respondent"]
+        seconds = sum(t["end"] - t["start"] for t in own)
+        syllables = sum(words_and_syllables(t.get("text", ""))[1] for t in own)
+        latency = qa.get("latency_s")
+        result[f"{segments['recording_id']}:q{qa['question_segment_id']}:a{qa['answer_segment_id']}"] = {
+            "audio_latency_s": latency if latency is not None and latency >= 0 else np.nan,
+            "audio_syllables_per_s": syllables / seconds if seconds > 0 else np.nan}
+    return result
 
 
 def normalize(answers: pd.DataFrame, features=CONTRAST_FEATURES) -> pd.DataFrame:
@@ -106,8 +136,11 @@ def hypothesis_tests(contrasts: pd.DataFrame, profiles: pd.DataFrame, group_colu
         h1 = sign_flip_test(part.contrast)
         h2 = group_difference_test(part.contrast, part[group_column].astype(bool))
         h3 = exact_spearman(part.expression, part.contrast)
-        rows.append(dict(feature=feature, h1_n=h1["n"], h1_mean=h1["mean"], h1_ci_low=h1["ci_low"],
-                         h1_ci_high=h1["ci_high"], h1_p=h1["p"], h2_group_n=h2["n_group"], h2_other_n=h2["n_other"],
+        expected = EXPECTED.get(feature, (None, None))[0]
+        signs = np.sign(part.contrast.dropna())
+        rows.append(dict(feature=feature, expected=expected,
+                         n_expected_direction=int((signs == expected).sum()) if expected else None,
+                         h1_n=h1["n"], h1_mean=h1["mean"], h1_ci_low=h1["ci_low"], h1_ci_high=h1["ci_high"], h1_p=h1["p"], h2_group_n=h2["n_group"], h2_other_n=h2["n_other"],
                          h2_group_mean=h2["group_mean"], h2_other_mean=h2["other_mean"],
                          h2_difference=h2["difference"], h2_p=h2["p"], h3_n=h3["n"], h3_rho=h3["rho"], h3_p=h3["p"]))
     frame = pd.DataFrame(rows)

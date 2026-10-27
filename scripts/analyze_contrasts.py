@@ -79,6 +79,12 @@ def main():
     labelled = pd.read_csv(ROOT/"outputs/research/multimodal/trial_features.csv")
     trials = base_trials(ROOT, set(labelled.trial_id))
     base, _ = extract_trial_features(ROOT, trials)
+    dialogue = {}
+    for path in sorted((ROOT/"outputs/audio").glob("*.segments.json")):
+        dialogue.update(lib.dialogue_features(json.loads(path.read_text(encoding="utf-8"))))
+    for frame in (labelled, base):
+        for column in lib.DIALOGUE:
+            frame[column] = [dialogue.get(t, {}).get(column, np.nan) for t in frame.trial_id]
     columns = ["trial_id", "participant_id", "recording_id", "start_s", "end_s", *lib.CONTRAST_FEATURES]
     answers = pd.concat([labelled[columns].assign(condition=np.where(labelled.label.eq(1), "lie", "truth")),
                          base[columns].assign(condition="base")], ignore_index=True)
@@ -94,7 +100,7 @@ def main():
     normalized.to_csv(out/"normalized_answers.csv", index=False, encoding="utf-8-sig")
     contrasts.to_csv(out/"participant_contrasts.csv", index=False, encoding="utf-8-sig")
     tests.to_csv(out/"hypothesis_tests.csv", index=False, encoding="utf-8-sig")
-    summary = dict(schema_version=1, labels={"truth": "label 0", "lie": "label 1", "base": "neutral question block answer"},
+    summary = dict(schema_version=2, expected={k: {"direction": d, "source": src} for k, (d, src) in lib.EXPECTED.items()}, labels={"truth": "label 0", "lie": "label 1", "base": "neutral question block answer"},
                    normalization="(x − participant median of base) / (participant IQR of all answers / 1.349)",
                    min_base=lib.MIN_BASE, min_scale_answers=lib.MIN_SCALE, min_group=lib.MIN_GROUP,
                    group={"column": GROUP, "definition": "first natural profile type is содействующий",
