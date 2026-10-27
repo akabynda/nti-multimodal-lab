@@ -111,6 +111,7 @@ REFERENCES={
  "parselmouth":"Jadoul Y., Thompson B., de Boer B. Introducing Parselmouth: a Python interface to Praat // Journal of Phonetics. – 2018. – Vol. 71. – P. 1–15. – DOI 10.1016/j.wocn.2018.07.001.",
  "wespeaker":"Wang H., Liang C., Wang S. [et al.] WeSpeaker: a research and production oriented speaker embedding learning toolkit // ICASSP 2023 – IEEE International Conference on Acoustics, Speech and Signal Processing. – 2023. – P. 1–5. – DOI 10.1109/ICASSP49357.2023.10096626.",
  "baevsky":"Баевский Р. М., Иванов Г. Г., Чирейкин Л. В. [и др.] Анализ вариабельности сердечного ритма при использовании различных электрокардиографических систем (методические рекомендации) // Вестник аритмологии. – 2001. – № 24. – С. 65–87.",
+ "merrill":"Merrill D. W., Reid R. H. Personal Styles and Effective Performance. – Radnor : Chilton Book Company, 1981. – 252 p.",
  "lopo":"Cross-validation: evaluating estimator performance. LeaveOneGroupOut : документация scikit-learn. – URL: https://scikit-learn.org/stable/modules/cross_validation.html.",
  "brier":"Brier G. W. Verification of forecasts expressed in terms of probability // Monthly Weather Review. – 1950. – Vol. 78, № 1. – P. 1–3. – DOI 10.1175/1520-0493(1950)078<0001:VOFEIT>2.0.CO;2.",
  "holm":"Holm S. A simple sequentially rejective multiple test procedure // Scandinavian Journal of Statistics. – 1979. – Vol. 6, № 2. – P. 65–70.",
@@ -126,7 +127,7 @@ def link(url):
 # Lead-in sentences referencing a table; {n} is the table number.
 TABLE_INTROS={
  "Сокращения":"Сокращения, используемые в отчёте, приведены в таблице {n}.",
- "Исходные материалы":"Состав исходных материалов приведён в таблице {n}.",
+ "Регистрируемые данные":"Состав регистрируемых данных приведён в таблице {n}.",
  "Профили участников":"Поведенческие профили участников приведены в таблице {n}, эмоциональные показатели — в таблице {m}.",
  "Этапы сессии, с от начала видео":"Границы этапов приведены в таблице {n}, порядок тематических блоков — в таблице {m}.",
  "Окна ВСР и контроль качества ЭКГ":"Число окон ВСР и окон, прошедших контроль качества ЭКГ, приведено в таблице {n}.",
@@ -234,7 +235,7 @@ relation={"consistent":"Согласуется с эталоном","different":
 counts=Counter(n["relation"] for n in notes)
 asr_validation=read(OUT/"audio/validation_summary.json",{})
 set_outline([
- ("Материалы и данные",["Исходные материалы","Записи участников","Профили участников","Этапы сессии"]),
+ ("Описание эксперимента",["Участники и протокол сессии","Регистрируемые данные","Записи участников","Профили участников","Этапы сессии"]),
  ("Синхронизация",[]),
  ("Биосигналы БиоРадио",["ЭКГ, ВСР и дыхание"]+(["Контактный ФПГ и ЭКГ"] if ppg_records else [])),
  ("Видеоаналитика",["Лицевые области, видеопульс и дыхание","Кинематика тела, головы и конечностей"]),
@@ -309,6 +310,8 @@ abbreviations=[
 table("Сокращения",["Сокращение","Расшифровка"],[list(x) for x in abbreviations],[110,385])
 story.append(PageBreak())
 heading("Введение",numbered=False)
+add("Контактная полиграфия регистрирует дыхание, пульс и кожно-гальваническую реакцию датчиками на теле. Камера и микрофон дают бесконтактные каналы: пульс по изменению цвета кожи лица, движения тела и головы, временные и акустические параметры речи. Сведение контактных и бесконтактных каналов на одну шкалу времени позволяет сравнить реакции разных систем на одном и том же ответе.")
+add("Реакции на ложь и стресс различаются между людьми. Поэтому признаки ответов сравниваются с индивидуальной нормой участника, а модели проверяются на участниках, не входивших в обучение.")
 add("Цель работы: разработать программный комплекс для контактного и бесконтактного выявления признаков психоэмоционального напряжения и скрываемой информации по синхронизированным видео, аудио и биосигналам.")
 add("Технические задачи:","Sub")
 for item in ["синхронизировать видео, аудио, ЭКГ, ФПГ и дыхательные сигналы;",
@@ -325,18 +328,36 @@ for item in ["разметить ответы участников по пись
              "выявить наиболее информативные маркеры для групп профилей;",
              "построить классификационную модель и оценить вклад профиля в качество распознавания."]:
     add("– "+item,"ListRu")
-add("Профиль участника задан анкетой Результаты.xlsx: естественный и демонстрируемый типы («Содействующий», «Контролирующий», «Координирующий», «Стимулирующий»), выраженность и эмоциональные показатели. В эксперименте участники намеренно изменяли часть ответов. Письменные истории служат правдивым эталоном для разметки.")
-add(f"Обработано {counted(len(audios),'запись','записи','записей')} общей продолжительностью {num(sum(a.get('duration_s',0) for a in audios)/60,2)} мин. Сверено {counted(review.get('stories_reviewed',len(sources)),'история','истории','историй')}.")
 story.append(PageBreak())
-heading("Материалы и данные")
-subheading("Исходные материалы")
-table("Исходные материалы",["Материал","Объём"],[
- ["Видео",counted(len(videos),'запись','записи','записей')],
- ["Письменные истории",f"{counted(len(sources),'история','истории','историй')}; {counted(research.get('source_documents',0),'исходный документ','исходных документа','исходных документов')}"],
- ["Диалоги",counted(sum(len(a.get('qa_candidates',[])) for a in audios),'пара','пары','пар')+" «вопрос – ответ»"],
- ["БиоРадио",f"{counted(len(bio),'запись','записи','записей')}; ЭКГ, RIP, GSR; контактный ФПГ в {counted(len(ppg_records),'записи','записях','записях')}"],
- ["Вариабельность ритма",f"{counted(total_windows,'окно','окна','окон')} по 120 с с шагом 5 с"],
-],[155,340])
+heading("Описание эксперимента")
+subheading("Участники и протокол сессии")
+recording_days=Counter(b.get("recording_start_time","")[:10] for b in bio if b.get("recording_start_time"))
+day_text="; ".join(f"{d[8:10]}.{d[5:7]}.{d[:4]} — {counted(n,'участник','участника','участников')}" for d,n in sorted(recording_days.items()))
+add(f"В эксперименте участвовали {counted(len(order),'человек','человека','человек')} — авторы отчёта. Даты записи: {day_text}. Каждая сессия записана одной камерой и прибором БиоРадио.")
+topic_counts=Counter(story_topic_title(x["title"]) for x in sources)
+common=[t for t,n in topic_counts.items() if n==len(order)]
+other=[t for t,n in topic_counts.most_common() if n<len(order)]
+per_person=round(len(sources)/len(order)) if order else 0
+add(f"Каждый участник написал {per_person} правдивых историй о себе. Темы {', '.join('«'+t+'»' for t in common)} есть у всех; остальные выбраны из тем {', '.join('«'+t+'»' for t in other)}. Истории служат эталоном для разметки ответов (раздел {ref('Разметка ответов')}).")
+add("Сессия: начальный фон 2 мин с закрытыми глазами; интервью с нейтральными вопросами и вопросами по темам историй; конечный фон 2 мин. В интервью участники намеренно изменяли часть сведений относительно своих историй. Интервалы ложных ответов участниками не размечались.")
+subheading("Регистрируемые данные")
+channel_names={"ECG":"ЭКГ","RIP":"RIP","GSR":"GSR","PPG PulseOx1":"контактный ФПГ","SpO2 PulseOx1":"SpO2",
+               "Heart Rate PulseOx1":"ЧСС пульсоксиметра","Flow Rate Sensor 1":"датчик потока воздуха"}
+bio_groups=Counter()
+for pid in order:
+    meta=read(OUT/"bio"/pid/"metadata.json",{})
+    channels=meta.get("channels",[])
+    if channels:
+        rates=sorted({c["sample_rate_hz"] for c in channels})
+        bio_groups[(", ".join(channel_names.get(c["name"],c["name"]) for c in channels),"/".join(plain(x) for x in rates))]+=1
+video=by_video.get(order[0],{}) if order else {}
+data_rows=[["Видео",f"{video.get('source_file','').rsplit('.',1)[-1].upper()}, {video.get('source_width')}×{video.get('source_height')}, {plain(video.get('source_fps'))} кадр/с; анализ лица {num(video.get('analysis_fps'),1)} кадр/с, позы до 5 Гц",str(len(videos))],
+           ["Звук","Дорожка видеофайла; для ASR и акустики декодируется с частотой 16 кГц",str(len(audios))]]
+data_rows+=[[f"БиоРадио",f"{names_} ; {rate} Гц".replace(" ;",";"),str(n)] for (names_,rate),n in bio_groups.items()]
+data_rows+=[["Письменные истории",f"{counted(len(sources),'история','истории','историй')} из {counted(research.get('source_documents',0),'исходного документа','исходных документов','исходных документов')}",str(len({x['participant_id'] for x in sources}))],
+            ["Анкета","Результаты.xlsx: тест Л34, профиль поведения",str(sum(pid in by_profile for pid in order))]]
+table("Регистрируемые данные",["Поток","Параметры","Участников"],data_rows,[110,305,80])
+add(f"После обработки получено {counted(sum(len(a.get('qa_candidates',[])) for a in audios),'пара','пары','пар')} «вопрос – ответ» и {counted(total_windows,'окно','окна','окон')} ВСР по 120 с с шагом 5 с.")
 subheading("Записи участников")
 rows=[]
 for i,a in enumerate(audios,1):
@@ -347,6 +368,7 @@ for i,a in enumerate(audios,1):
 recordings_table=table("Длительность видеозаписей и записей БиоРадио",["ID","Участник","Видео, с","БОС, с","Разница, с"],rows,[35,190,90,90,90])
 add(f"Видео, тексты и записи прибора объединены по именам файлов и данным документов. Обозначения P01–P{len(order):02} в таблицах и на рисунках соответствуют порядку таблицы {recordings_table}.")
 subheading("Профили участников")
+add(f"Профиль получен тестом Л34 (Результаты.xlsx). Естественный и демонстрируемый стили — четыре социальных стиля модели Д. Меррилла и Р. Рида {cite('merrill')}: «Контролирующий», «Стимулирующий», «Содействующий», «Координирующий»; допускается сочетание двух стилей, первым указан ведущий. Числовые шкалы: выраженность стиля, Эмоц+, Эмоц− и Эмоц_Баланс = Эмоц+ − Эмоц−.")
 profiles_table=table("Профили участников",["Участник","ИСУ","Естественный","Демонстрируемый","Выраженность"],[
  [names[pid],by_profile.get(pid,{}).get("tab_number") or "н/д",
   profile_types(by_profile.get(pid,{}).get("profile_natural_raw")),
