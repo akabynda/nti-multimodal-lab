@@ -111,6 +111,12 @@ REFERENCES={
  "parselmouth":"Jadoul Y., Thompson B., de Boer B. Introducing Parselmouth: a Python interface to Praat // Journal of Phonetics. – 2018. – Vol. 71. – P. 1–15. – DOI 10.1016/j.wocn.2018.07.001.",
  "wespeaker":"Wang H., Liang C., Wang S. [et al.] WeSpeaker: a research and production oriented speaker embedding learning toolkit // ICASSP 2023 – IEEE International Conference on Acoustics, Speech and Signal Processing. – 2023. – P. 1–5. – DOI 10.1109/ICASSP49357.2023.10096626.",
  "baevsky":"Баевский Р. М., Иванов Г. Г., Чирейкин Л. В. [и др.] Анализ вариабельности сердечного ритма при использовании различных электрокардиографических систем (методические рекомендации) // Вестник аритмологии. – 2001. – № 24. – С. 65–87.",
+ "depaulo":"DePaulo B. M., Lindsay J. J., Malone B. E. [et al.] Cues to deception // Psychological Bulletin. – 2003. – Vol. 129, № 1. – P. 74–118. – DOI 10.1037/0033-2909.129.1.74.",
+ "vrij":"Vrij A. Detecting Lies and Deceit: Pitfalls and Opportunities. – 2nd ed. – Chichester : John Wiley & Sons, 2008. – 488 p.",
+ "verkruysse":"Verkruysse W., Svaasand L. O., Nelson J. S. Remote plethysmographic imaging using ambient light // Optics Express. – 2008. – Vol. 16, № 26. – P. 21434–21445. – DOI 10.1364/OE.16.021434.",
+ "chrom":"de Haan G., Jeanne V. Robust pulse rate from chrominance-based rPPG // IEEE Transactions on Biomedical Engineering. – 2013. – Vol. 60, № 10. – P. 2878–2886. – DOI 10.1109/TBME.2013.2266196.",
+ "praat":"Boersma P., Weenink D. Praat: doing phonetics by computer : программа. – URL: https://www.praat.org.",
+ "blazepose":"Bazarevsky V., Grishchenko I., Raveendran K. [et al.] BlazePose: on-device real-time body pose tracking // arXiv. – 2020. – arXiv:2006.10204.",
  "merrill":"Merrill D. W., Reid R. H. Personal Styles and Effective Performance. – Radnor : Chilton Book Company, 1981. – 252 p.",
  "lopo":"Cross-validation: evaluating estimator performance. LeaveOneGroupOut : документация scikit-learn. – URL: https://scikit-learn.org/stable/modules/cross_validation.html.",
  "brier":"Brier G. W. Verification of forecasts expressed in terms of probability // Monthly Weather Review. – 1950. – Vol. 78, № 1. – P. 1–3. – DOI 10.1175/1520-0493(1950)078<0001:VOFEIT>2.0.CO;2.",
@@ -236,6 +242,8 @@ counts=Counter(n["relation"] for n in notes)
 asr_validation=read(OUT/"audio/validation_summary.json",{})
 set_outline([
  ("Описание эксперимента",["Участники и протокол сессии","Регистрируемые данные","Записи участников","Профили участников","Этапы сессии"]),
+ ("Аналитический обзор",["Признаки лжи","Дистанционная фотоплетизмография","Вариабельность сердечного ритма",
+                         "Речь и диалог","Поза и движения","Проверка на малой выборке"]),
  ("Синхронизация",[]),
  ("Биосигналы БиоРадио",["ЭКГ, ВСР и дыхание"]+(["Контактный ФПГ и ЭКГ"] if ppg_records else [])),
  ("Видеоаналитика",["Лицевые области, видеопульс и дыхание","Кинематика тела, головы и конечностей"]),
@@ -398,6 +406,20 @@ stages_table=table("Этапы сессии, с от начала видео",["
 table("Последовательность тематических блоков",["Участник","Блоки по порядку"],[
  [f"P{i+1:02}"," → ".join(b["topic"] or "Без темы" for b in summaries[pid]["stages"]["blocks"])]
  for i,pid in enumerate(order)],[70,425])
+story.append(PageBreak())
+heading("Аналитический обзор")
+subheading("Признаки лжи")
+add(f"Обобщение исследований поведенческих признаков обмана {cite('depaulo')} показало, что ни один признак не сопровождает ложь надёжно: большинство связей слабые и неустойчивы между выборками. Устойчивее признаки когнитивной нагрузки: построение ложного ответа требует больше ресурсов, что проявляется в увеличении времени до начала ответа и числа пауз и в замедлении речи {cite('vrij')}. ЧСС, дыхание и кожно-гальваническая реакция отражают общее возбуждение и не различают ложь и волнение; их изменения оцениваются относительно фона того же человека.")
+subheading("Дистанционная фотоплетизмография")
+add(f"Пульсовая волна меняет кровенаполнение кожи и вместе с ним её цвет. Изменение регистрируется обычной камерой; первые работы использовали зелёный канал {cite('verkruysse')}. Методы CHROM {cite('chrom')} и POS {cite('pos')} строят пульсовый сигнал из комбинации цветовых каналов, ортогональной изменениям яркости и бликам. Точность снижают движения головы, переменное освещение, сжатие видео и малая площадь кожи в кадре. В работе используется POS.")
+subheading("Вариабельность сердечного ритма")
+add(f"Стандарт анализа ВСР {cite('hrv')} задаёт временные показатели (SDNN, RMSSD, pNN50) и мощности спектра в диапазонах VLF, LF и HF. Индекс напряжения Р. М. Баевского {cite('baevsky')} рассчитывается по гистограмме RR-интервалов. По стандарту ULF оценивается только по суточным записям, а оценка VLF по записям 2–5 мин ненадёжна; в окне 120 с VLF приводится справочно.")
+subheading("Речь и диалог")
+add(f"Модель Whisper {cite('whisper')} распознаёт русскую речь и выдаёт временные метки слов. Разделение голосов строится по векторным представлениям диктора, например WeSpeaker {cite('wespeaker')}. Основной тон, форманты и интенсивность рассчитываются алгоритмами Praat {cite('praat')}. По временным меткам диалога рассчитываются латентность ответа, паузы и темп.")
+subheading("Поза и движения")
+add(f"Модели оценки позы по ключевым точкам, например BlazePose {cite('blazepose')}, определяют положение головы, плеч, кистей, таза и стоп в каждом кадре. По траекториям точек рассчитываются наклон корпуса, кивки и повороты головы, касания лица и закрытые позы. Точки с низкой уверенностью исключаются, остальные части тела анализируются независимо.")
+subheading("Проверка на малой выборке")
+add(f"Ответы одного человека зависимы, поэтому единица статистического вывода — участник. При {len(order)} участниках точные перестановочные тесты дают p-значения без предположения о нормальности. Модели проверяются с исключением всего участника из обучения {cite('lopo')}: иначе модель запоминает индивидуальные особенности. Поправка Холма {cite('holm')} ограничивает вероятность хотя бы одной ложной находки в семействе проверок.")
 story.append(PageBreak())
 heading("Синхронизация")
 add("БиоРадио запускали перед видеозаписью и останавливали после неё. Поэтому длительность БОС больше длительности видео. Разница задаёт допустимый диапазон опережения прибора: от 0 до LБОС − Lвидео.")
