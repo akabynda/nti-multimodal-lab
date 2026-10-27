@@ -210,3 +210,35 @@ def session_stages(segments: dict, baselines: list[dict]) -> dict:
             "dialogue_start_s": blocks[0]["start_s"] if blocks else np.nan,
             "dialogue_end_s": blocks[-1]["end_s"] if blocks else np.nan,
             "blocks": blocks, "neutral_answers": neutral}
+
+
+AGREEMENT_METRICS = ("hr_bpm", "sdnn_ms", "rmssd_ms", "lf_ms2", "hf_ms2", "lf_hf")
+
+
+def icc_a1(x, y) -> float:
+    """ICC(A,1): two-way model, absolute agreement, single measurement (McGraw and Wong)."""
+    data = np.column_stack([x, y]).astype(float)
+    n, k = data.shape
+    grand = data.mean()
+    rows = k * ((data.mean(axis=1) - grand) ** 2).sum() / (n - 1)
+    columns = n * ((data.mean(axis=0) - grand) ** 2).sum() / (k - 1)
+    error = ((data - data.mean(axis=1, keepdims=True) - data.mean(axis=0) + grand) ** 2).sum() / ((n - 1) * (k - 1))
+    denominator = rows + (k - 1) * error + k * (columns - error) / n
+    return float((rows - error) / denominator) if denominator > 0 else np.nan
+
+
+def ppg_agreement(comparison: pd.DataFrame) -> list[dict]:
+    """ECG versus contact PPG over windows with `paired_usable`; overlapping windows are not independent."""
+    pairs = comparison[comparison.paired_usable.astype(str).str.lower().eq("true")]
+    rows = []
+    for metric in AGREEMENT_METRICS:
+        ecg, ppg = pairs[f"ecg_{metric}"].astype(float), pairs[f"ppg_{metric}"].astype(float)
+        keep = ecg.notna() & ppg.notna()
+        ecg, ppg = ecg[keep].to_numpy(), ppg[keep].to_numpy()
+        diff = ppg - ecg
+        rows.append(dict(metric=metric, windows=len(ecg), ecg_mean=ecg.mean() if len(ecg) else np.nan,
+                         ppg_mean=ppg.mean() if len(ppg) else np.nan, bias=diff.mean() if len(diff) else np.nan,
+                         sd=diff.std(ddof=1) if len(diff) > 1 else np.nan,
+                         r=float(np.corrcoef(ecg, ppg)[0, 1]) if len(ecg) > 2 and np.ptp(ecg) > 0 and np.ptp(ppg) > 0 else np.nan,
+                         icc=icc_a1(ecg, ppg) if len(ecg) > 2 else np.nan))
+    return rows

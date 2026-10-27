@@ -79,3 +79,15 @@ def test_head_oscillation_frequency_is_recovered():
     assert abs(row["nod_frequency_hz"] - 1.2) < .1
     assert abs(row["nod_rms"] - .01 / np.sqrt(2)) < .001
     assert row["face_visible_fraction"] == 1
+
+
+def test_icc_and_ppg_agreement():
+    from nti_lab.session_summary import icc_a1, ppg_agreement
+    x = np.array([60., 70, 80, 90])
+    assert np.isclose(icc_a1(x, x), 1)
+    assert icc_a1(x, x + 10) < icc_a1(x, x + 1) < 1
+    comparison = pd.DataFrame({"paired_usable": [True, True, True, False],
+                               **{f"{s}_{m}": x + (2 if s == "ppg" else 0) for s in ("ecg", "ppg")
+                                  for m in ("hr_bpm", "sdnn_ms", "rmssd_ms", "lf_ms2", "hf_ms2", "lf_hf")}})
+    hr = ppg_agreement(comparison)[0]
+    assert hr["windows"] == 3 and hr["bias"] == 2 and np.isclose(hr["r"], 1) and hr["icc"] < 1
