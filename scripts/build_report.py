@@ -515,6 +515,10 @@ hrv_table=table("Показатели ВСР по ЭКГ: медианы око�
   summary(pid,"vlf_ms2",0),summary(pid,"lf_ms2",0),summary(pid,"hf_ms2",0),summary(pid,"lf_hf",2),summary(pid,"total_ms2",0)]
  for i,pid in enumerate(order)],[34,44,41,44,41,40,44,44,42,38,83])
 add(f"ИН — индекс напряжения Баевского {cite('baevsky')}: AMo / (2 × Mo × MxDMn), где Mo — центр модального интервала гистограммы RR с шагом 50 мс, с; AMo — доля RR в этом интервале, %; MxDMn — размах RR, с. Рассчитывается при не менее 30 принятых RR в окне. Временные показатели и ИН — медианы окон с ecg_quality = usable_automatic; спектральные — медианы тех же окон с рассчитанным спектром. ULF не рассчитывается: окно 120 с короче периода ULF (> 300 с).","SmallRu")
+report_figures.hr_timeline([(codes[pid],pd.read_csv(OUT/"bio"/pid/"metrics.csv"),by_alignment[pid]["bio_to_video_offset_s"],summaries[pid]["stages"])
+                           for pid in order if (OUT/"bio"/pid/"metrics.csv").exists() and pid in by_alignment],FIGURES/"hr_timeline.png")
+figure(FIGURES/"hr_timeline.png","ЧСС по ЭКГ в окнах 120 с на шкале видео; цветом отмечены тематические блоки, штриховкой — фоны с закрытыми глазами",max_height=560,
+       intro=f"Динамика ЧСС по ходу сессии с границами этапов (раздел {ref('Этапы сессии')}) показана на рисунке {{n}}. Время окна переведено в шкалу видео автоматическим смещением (раздел {ref('Синхронизация')}).")
 table("Частота дыхания по поясу RIP",["Участник","Окон с периодическим дыханием","ЧДД RIP, /мин"],[
  [f"P{i+1:02}",str(summaries[pid].get("rip_windows","н/д")),summary(pid,"rip_rate_bpm")] for i,pid in enumerate(order)],[80,250,165])
 add("ЧДД RIP — медиана окон 120 с со статусом RIP_periodic_candidate (доминирующая частота пояса RIP с достаточной периодичностью).","SmallRu")

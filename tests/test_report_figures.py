@@ -53,3 +53,12 @@ def test_contrast_dots_skip_untested_features(tmp_path):
     tests = [dict(feature="x", h1_mean=0., h1_ci_low=-1., h1_ci_high=1., expected=1), dict(feature="y", h1_mean=None)]
     contrast_dots(contrasts, tests, {"x": "X"}, {"A"}, tmp_path / "dots.png")
     assert (tmp_path / "dots.png").exists()
+
+
+def test_hr_timeline_writes_figure(tmp_path):
+    from nti_lab.report_figures import hr_timeline
+    metrics = pd.DataFrame(dict(center_s=[60, 65, 70], hr_bpm=[70, 72, 90], ecg_quality=["usable_automatic"] * 2 + ["review_required"]))
+    stages = {"blocks": [{"topic": "Обман", "start_s": 10, "end_s": 50}, {"topic": None, "start_s": 50, "end_s": 60}],
+              "baselines": [{"name": "beginning", "start_s": 0, "end_s": 10}]}
+    hr_timeline([("P01", metrics, -5., stages)], tmp_path / "hr.png")
+    assert (tmp_path / "hr.png").exists()

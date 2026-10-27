@@ -189,3 +189,38 @@ def contrast_dots(contrasts: pd.DataFrame, tests: list[dict], labels: dict, grou
                    plt.Line2D([], [], marker="D", ls="", color=INK, label="среднее и 95 % ДИ")]
         fig.legend(handles=handles, loc="outside lower center", ncol=3, frameon=False)
         _save(fig, path)
+
+
+TOPIC_COLORS = {"Нейтральные вопросы": "#D9DDE6", "Выбор профессии": "#CFE0FF", "Достижения": "#D6F5FF",
+                "Алкоголь": "#E9D9FF", "Конфликт": "#FFD9D6", "Обман": "#FFE9B8", "Экзамен": "#E3F7C9",
+                "Летний день": "#F3F0C9", "Нерешённая проблема": "#EADFD3"}
+
+
+def hr_timeline(sessions: list[tuple[str, pd.DataFrame, float, dict]], path: Path):
+    """ECG heart rate of QC-passing 120 s windows on the video clock with session stages.
+
+    Each session: code, metrics.csv rows, BioRadio-to-video offset (t_video = offset + t_bio)
+    and `session_summary.session_stages` output. Rest baselines are grey hatched.
+    """
+    with plt.rc_context(STYLE):
+        fig, axes = plt.subplots(len(sessions), 1, figsize=(8.3, 1.05 * len(sessions) + .8), sharex=True,
+                                 layout="constrained", squeeze=False)
+        used = []
+        for ax, (code, metrics, offset, stages) in zip(axes[:, 0], sessions):
+            for block in stages["blocks"]:
+                topic = block["topic"] or "Нейтральные вопросы"
+                ax.axvspan(block["start_s"], block["end_s"], color=TOPIC_COLORS.get(topic, "#EEEEEE"), lw=0)
+                used.append(topic)
+            for baseline in stages["baselines"]:
+                ax.axvspan(baseline["start_s"], baseline["end_s"], facecolor="white", edgecolor=MUTED, hatch="///", lw=0, alpha=.6)
+            good = metrics[metrics.ecg_quality.eq("usable_automatic")]
+            ax.plot(good.center_s + offset, good.hr_bpm, ".", color=RED, ms=2.2)
+            ax.set_ylabel(code, rotation=0, ha="right", va="center")
+            ax.grid(axis="y", alpha=.4)
+        axes[-1, 0].set_xlabel("Время видео, с (точки — центры окон 120 с, прошедших контроль)")
+        fig.supylabel("ЧСС ЭКГ, уд/мин", fontsize=8)
+        topics = [t for t in TOPIC_COLORS if t in used]
+        handles = [plt.Rectangle((0, 0), 1, 1, color=TOPIC_COLORS[t], label=t) for t in topics]
+        handles.append(plt.Rectangle((0, 0), 1, 1, facecolor="white", edgecolor=MUTED, hatch="///", label="фон с закрытыми глазами"))
+        fig.legend(handles=handles, loc="outside lower center", ncol=4, frameon=False, fontsize=7)
+        _save(fig, path)
