@@ -787,6 +787,23 @@ figure(OUT/"report/interface.png","Интерфейс просмотра и со
 add("Запуск: start.cmd. Установка для Windows/Linux/macOS и запуск через Docker описаны в README.")
 story.append(PageBreak())
 heading("Выводы по работе",numbered=False)
+status_counts=Counter(by_alignment.get(pid,{}).get("status") for pid in order)
+hr_errors=[by_alignment[pid]["crossmodal_summary"]["hr_mae_bpm"] for pid in order
+           if by_alignment.get(pid,{}).get("crossmodal_summary",{}).get("hr_mae_bpm") is not None]
+ppg_rows={a["metric"]:a for a in (agreement_rows if ppg_records and "agreement_rows" in globals() else [])}
+latency=next((row for row in tests if row["feature"]=="audio_latency_s"),None)
+feet_missing=sum((summaries[pid].get("feet_visible_fraction") or 0)<.1 for pid in order)
+add("Задачи работы выполнены со следующими результатами:")
+done=[f"синхронизация: смещение БиоРадио относительно видео оценено для {counted(len(by_alignment),'записи','записей','записей')}; однозначный максимум общей оценки — в {status_counts.get('supported_unverified',0)}, неоднозначный — в {status_counts.get('ambiguous_unverified',0)} (раздел {ref('Синхронизация')});",
+      f"видеопульс rPPG: медиана MAE ЧСС относительно ЭКГ по записям — {num(np.median(hr_errors),1)} уд/мин, диапазон {num(min(hr_errors),1)}–{num(max(hr_errors),1)} уд/мин; среднее смещение по всем окнам — {num(agreement.get('bias_bpm'),2)} уд/мин (раздел {ref('Видеоаналитика')});" if hr_errors else None,
+      f"речь: для {counted(sum(len(a.get('qa_candidates',[])) for a in audios),'пары','пар','пар')} «вопрос – ответ» рассчитаны латентность, длительность, темп, основной тон, уровень, спектральные характеристики и форманты (раздел {ref('Речевой анализ')});",
+      f"кинематика: рассчитаны наклон и смещение корпуса, кивки и повороты головы, скорость кистей, касания лица и закрытые позы; в {counted(feet_missing,'записи','записях','записях')} стопы видны менее чем в 10 % кадров, остальные показатели рассчитаны (раздел {ref('Видеоаналитика')});",
+      f"ВСР: показатели и индекс напряжения рассчитаны в {counted(total_windows,'окне','окнах','окнах')} 120 с; ICC(A,1) ЭКГ и контактного ФПГ ({codes[ppg_records[-1]['subject_id']]}) — {num(ppg_rows['hr_bpm']['icc'],3)} для ЧСС, {num(ppg_rows['sdnn_ms']['icc'],3)} для SDNN, {num(ppg_rows['lf_ms2']['icc'],3)} для LF и {num(ppg_rows['rmssd_ms']['icc'],3)} для RMSSD (раздел {ref('Биосигналы БиоРадио')});" if ppg_rows else None,
+      f"разметка: {counted(dataset['agreements'],'ответ','ответа','ответов')} «Правда», {counted(dataset['contradictions'],'ответ','ответа','ответов')} «Ложь» и {sum(int(c.get('base',0)) for c in contrast_summary['counts'])} «База» (раздел {ref('Метки и нормализация')});",
+      f"маркеры: латентность ответа при лжи выросла у {int(latency['n_expected_direction'])} из {latency['h1_n']} участников, среднее {num(latency['h1_mean'],2)} z, p = {num(latency['h1_p'],3)}, p Холма = {num(latency['h1_p_holm'],3)} (раздел {ref('Маркеры «Ложь − Правда»')});" if latency and latency.get("h1_p") is not None else None,
+      "интерфейс из пяти синхронизированных зон и репозиторий с Docker, окружением Conda, тестами и GitHub Actions."]
+for item in done:
+    if item:add("– "+item,"ListRu")
 add("Создан комплекс обработки и синхронного просмотра видео, речи и БиоРадио. Рассчитаны характеристики голоса, движений, пульса, дыхания и вариабельности сердечного ритма. Сопоставление устных ответов с письменными историями выявило несоответствия у каждого участника; для них сохранены проверяемые цитаты и временные границы.")
 add("Автоматическое распознавание лжи по измеренным признакам на этих данных не достигнуто. Лучший из проверенных наборов — движения головы и торса, раскрытие глаз и движение рта — дал качество около случайного уровня. Речевые признаки, биосигналы и их объединение не обеспечили улучшения относительно простого прогноза по доле классов. Отдельный надёжный маркер лжи среди рассчитанных показателей не установлен.")
 add("Добавление профилей участников не снизило ошибку вероятностного прогноза Brier. Корреляционный анализ профилей с показателями за всю запись также не выявил значимых связей после поправки на множественные проверки.")
