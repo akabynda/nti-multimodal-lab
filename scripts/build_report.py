@@ -145,7 +145,10 @@ TABLE_INTROS={
  "Временные параметры диалога":"Временные параметры диалога приведены в таблице {n}, акустические характеристики — в таблице {m}.",
  "Категории сверки с письменным эталоном":"Категории сверки приведены в таблице {n}, их число — в таблице {m}.",
  "Число ответов по меткам":"Число ответов с каждой меткой приведено в таблице {n}.",
- "Проверяемые гипотезы, уровень значимости 0,05":"Гипотезы, методы проверки и результаты приведены в таблице {n}.",
+ "Проверяемые гипотезы":"Гипотезы и методы проверки приведены в таблице {n}, ожидаемые по литературе направления изменения признаков — в таблице {m}.",
+ "Контраст «Ложь − Правда» в единицах z по участникам":"Контрасты всех участников приведены в таблице {n}.",
+ "Контраст «Ложь − Правда» по группам профиля и связь с выраженностью":"Контрасты групп профиля и их связь с выраженностью приведены в таблице {n}.",
+ "Результаты проверки гипотез":"Итоги проверки гипотез H1–H5 приведены в таблице {n}.",
  "Модели LOPO на исходных и нормированных к «Базе» признаках":"Качество моделей на исходных и нормированных признаках приведено в таблице {n}.",
  "Качество моделей при проверке LOPO":"Качество моделей приведено в таблице {n}.",
  "Чувствительность моделей к границам смещения":"Результаты приведены в таблице {n}.",
@@ -251,8 +254,10 @@ set_outline([
  ("Видеоаналитика",["Лицевые области, видеопульс и дыхание","Кинематика тела, головы и конечностей"]),
  ("Речевой анализ",["Распознавание речи и проверка стенограмм","Речевые и акустические показатели"]),
  ("Разметка ответов",["Сопоставление с письменным эталоном"]),
- ("Статистический анализ",["Метки ответов и нормализация","Гипотезы","Контрасты и маркеры по группам профиля",
-                           "Модели классификации","Вклад профилей и биосигналов","Связи профилей с измерениями"]),
+ ("Методика анализа",["Метки и нормализация","Гипотезы и ожидаемые направления","Модели классификации",
+                      "Корреляционный анализ профилей"]),
+ ("Результаты",["Маркеры «Ложь − Правда»","Маркеры по группам профиля","Проверка гипотез","Классификация",
+                "Вклад профилей и биосигналов","Связи профилей с измерениями"]),
  ("Интерфейс",[])])
 FIGURES=OUT/"report/figures"
 summaries={}
@@ -397,7 +402,7 @@ for pid in order:
 add(f"Источник таблиц {profiles_table} и {emotions_table}: Результаты.xlsx, сопоставление по номеру ИСУ.","SmallRu")
 subheading("Этапы сессии")
 add(f"Сессия состоит из начального фона с закрытыми глазами (2 мин), диалога и конечного фона. Границы фонов найдены по речевой инструкции интервьюера и раскрытию глаз (раздел {ref('Синхронизация')}). Диалог — пары «вопрос – ответ» между концом начального и началом конечного фона.")
-add(f"Тематический блок задаётся по двум последним предложениям вопроса: первое совпадение с ключевыми основами темы истории (профессия, экзамен, достижения, алкоголь, обман, конфликт, летний день, нерешённая проблема) или нейтральных вопросов (о себе, увлечения, самочувствие). Вопрос без совпадения продолжает текущий блок. Ответы нейтрального блока используются как «База» (раздел {ref('Метки ответов и нормализация')}).")
+add(f"Тематический блок задаётся по двум последним предложениям вопроса: первое совпадение с ключевыми основами темы истории (профессия, экзамен, достижения, алкоголь, обман, конфликт, летний день, нерешённая проблема) или нейтральных вопросов (о себе, увлечения, самочувствие). Вопрос без совпадения продолжает текущий блок. Ответы нейтрального блока используются как «База» (раздел {ref('Метки и нормализация')}).")
 def stage_span(stages,name):
     item=next((b for b in stages["baselines"] if b["name"]==name),None)
     return f"{num(item['start_s'],0)}–{num(item['end_s'],0)}" if item else "н/д"
@@ -619,7 +624,7 @@ comparison_table=table("Результаты сверки устных отве�
 add(f"Всего {counted(len(notes),'запись','записи','записей')} сверки (таблица {comparison_table}). Одна история может содержать несколько проверяемых утверждений. Для найденных ответов сохранены цитаты, вопрос и время на видео; отсутствующие пересказы отмечены отдельно. Ключевые сопоставления по каждому участнику приведены в приложении А, полная таблица с цитатами и таймкодами — в outputs/research/content_comparison.csv.")
 
 story.append(PageBreak())
-heading("Статистический анализ")
+heading("Методика анализа")
 if not multimodal.get("models"):
     raise SystemExit("Run scripts/analyze_multimodal.py before building the report")
 contrast_summary=read(OUT/"research/contrasts/summary.json")
@@ -632,11 +637,23 @@ def delta_text(delta):
     return text+("; интервал включает 0" if delta["ci_low"]<=0<=delta["ci_high"] else "")
 def significant(rows,key):
     return [row for row in rows if row.get(key) is not None and row[key]<.05]
-labels_ru={**FEATURE_LABELS,contrast_lib.ANOMALY:"Норма вектора акустических аномалий"}
+labels_ru={**FEATURE_LABELS,contrast_lib.ANOMALY:"Норма вектора акустических аномалий",
+           "audio_latency_s":"Латентность ответа, с","audio_syllables_per_s":"Темп, слогов/с"}
 tests=contrast_summary["tests"]
 contrast_models={row["id"]:row["metrics"] for row in contrast_summary["models"]}
 normalization_delta=contrast_summary["increments"]["normalized_minus_raw"]
-subheading("Метки ответов и нормализация")
+dataset=multimodal["dataset"]
+model_rows=multimodal["models"]
+model_metrics={row["id"]:row["metrics"] for row in model_rows}
+increment=multimodal["profile_increment"]
+fusion_increment=multimodal["fusion_profile_increment"]
+families=multimodal["association_families"]
+associations=multimodal["associations"]
+group=contrast_summary["group"]
+group_codes=", ".join(codes[pid] for pid in order if pid in group["participants"])
+other_codes=", ".join(codes[pid] for pid in order if pid not in group["participants"])
+estimable=lambda key:sum(row.get(key) is not None for row in tests)
+subheading("Метки и нормализация")
 add(f"Каждому ответу присвоена одна из трёх меток: «Правда» — ответ согласуется с письменным эталоном; «Ложь» — ответ содержит несоответствие эталону (раздел {ref('Разметка ответов')}); «База» — ответ на вопрос нейтрального блока (о себе, увлечения, самочувствие; раздел {ref('Этапы сессии')}). Ответ с меткой «Правда» или «Ложь» в «Базу» не входит.")
 count_rows=[]
 for i,pid in enumerate(order):
@@ -644,49 +661,27 @@ for i,pid in enumerate(order):
     count_rows.append([f"P{i+1:02}",str(c.get("truth",0)),str(c.get("lie",0)),str(c.get("base",0))])
 count_rows.append(["Всего",*[str(sum(int(row[j]) for row in count_rows)) for j in (1,2,3)]])
 labels_table=table("Число ответов по меткам",["Участник","«Правда»","«Ложь»","«База»"],count_rows,[110,128,128,129])
-add(f"Нормализация выполняется отдельно для каждого участника и признака: z = (x − медиана «Базы») / (IQR всех ответов участника / 1,349); z ограничено интервалом [−{num(contrast_lib.Z_LIMIT,0)}; {num(contrast_lib.Z_LIMIT,0)}]. Метки «Правда» и «Ложь» в расчёт центра и масштаба не входят. При менее чем {contrast_lib.MIN_BASE} значениях «Базы» или менее чем {contrast_lib.MIN_SCALE} ответах с измеренным признаком z не рассчитывается. Вектор акустических аномалий ответа — z основного тона, разброса F0, уровня, темпа и доли пауз; его норма — корень из среднего квадрата доступных компонент.")
+add(f"Нормализация выполняется отдельно для каждого участника и признака: z = (x − медиана «Базы») / (IQR всех ответов участника / 1,349); z ограничено интервалом [−{num(contrast_lib.Z_LIMIT,0)}; {num(contrast_lib.Z_LIMIT,0)}]. Метки «Правда» и «Ложь» в расчёт центра и масштаба не входят. При менее чем {contrast_lib.MIN_BASE} значениях «Базы» или менее чем {contrast_lib.MIN_SCALE} ответах с измеренным признаком z не рассчитывается.")
+add("Признаки ответа: латентность — интервал от конца вопроса до начала ответа; темп в слогах/с — гласные реплик респондента, делённые на их длительность; речевые признаки окон 5 с внутри ответа; движения головы, торса, глаз и рта за интервал ответа; ЧСС и RMSSD ЭКГ в окне 120 с, содержащем середину ответа. Вектор акустических аномалий ответа — z основного тона, разброса F0, уровня, темпа в словах/мин и доли пауз; его норма — корень из среднего квадрата доступных компонент.")
 add("Контраст участника по признаку — среднее z ответов «Ложь» минус среднее z ответов «Правда». Единица статистического вывода — участник.")
-subheading("Гипотезы")
-group=contrast_summary["group"]
-group_codes=", ".join(codes[pid] for pid in order if pid in group["participants"])
-other_codes=", ".join(codes[pid] for pid in order if pid not in group["participants"])
-estimable=lambda key:sum(row.get(key) is not None for row in tests)
-def verdict(rows,key):
-    hits=significant(rows,key)
-    return "p Холма < 0,05: "+", ".join(labels_ru.get(r["feature"],r["feature"]) for r in hits) if hits else "Нулевая гипотеза не отвергнута ни для одного признака (p Холма ≥ 0,05)"
+subheading("Гипотезы и ожидаемые направления")
 hypotheses=[
- ["H1","Контраст «Ложь − Правда» отличается от нуля",f"Точный двусторонний тест перестановки знаков по участникам; поправка Холма по {estimable('h1_p')} признакам",verdict(tests,"h1_p_holm")],
- ["H2",f"Контраст различается между группами профиля: ведущий естественный тип «Содействующий» ({group_codes}) и остальные ({other_codes})",f"Точный перестановочный тест разности средних групп; минимум {contrast_lib.MIN_GROUP} участника в группе; поправка Холма по {estimable('h2_p')} признакам",verdict(tests,"h2_p_holm")],
- ["H3","Контраст связан с выраженностью профиля","Коэффициент Спирмена, точные перестановки рангов; минимум 6 участников; поправка Холма",verdict(tests,"h3_p_holm")],
- ["H4","Профили снижают ошибку модели «видео + речь»","Δ Brier с профилями и без, LOPO, bootstrap по участникам",delta_text(multimodal["profile_increment"])],
- ["H5","Нормализация к «Базе» снижает ошибку модели","Δ Brier нормированных и исходных признаков, LOPO, bootstrap по участникам",delta_text(normalization_delta)],
-]
-hypotheses_table=table("Проверяемые гипотезы, уровень значимости 0,05",["№","Гипотеза H1 (альтернатива)","Метод","Результат"],hypotheses,[28,150,160,157])
-subheading("Контрасты и маркеры по группам профиля")
-add(f"Контрасты по признакам и группам приведены в таблице {numbers['table']+1}. Признак не рассчитывается, если контраст доступен менее чем у 6 участников (основной тон, его разброс и уровень речи вычисляются только по окнам 5 с внутри ответа).")
-marker_rows=[]
-for row in tests:
-    marker_rows.append([labels_ru.get(row["feature"],row["feature"]),str(row["h1_n"]),
-        f"{num(row['h1_mean'],2)} [{num(row['h1_ci_low'],2)}; {num(row['h1_ci_high'],2)}]" if row["h1_mean"] is not None else "н/д",holm_p(row.get("h1_p_holm")),
-        num(row["h2_group_mean"],2),num(row["h2_other_mean"],2),holm_p(row.get("h2_p_holm")),
-        num(row["h3_rho"],2),holm_p(row.get("h3_p_holm"))])
-table("Контраст «Ложь − Правда» в единицах z: все участники, группы профиля и связь с выраженностью",
-      ["Признак","n","Среднее [95 % ДИ]","p Холма H1","Сод.","Др.","p Холма H2","ρ","p Холма H3"],marker_rows,[108,22,92,48,40,40,48,40,57])
-add("n — число участников с контрастом; Сод. и Др. — средний контраст группы с ведущим естественным типом «Содействующий» и остальных участников; ρ — коэффициент Спирмена контраста и выраженности профиля.","SmallRu")
-ranked=sorted([row for row in tests if row["h2_group_mean"] is not None],key=lambda row:-abs(row["h2_group_mean"]))[:3]
-ranked_other=sorted([row for row in tests if row["h2_other_mean"] is not None],key=lambda row:-abs(row["h2_other_mean"]))[:3]
-if ranked and ranked_other:
-    add("Наибольшие по модулю средние контрасты группы «Содействующий»: "+"; ".join(f"{labels_ru.get(r['feature'],r['feature']).split(',')[0].lower()} ({num(r['h2_group_mean'],2)})" for r in ranked)+". Группы остальных профилей: "+"; ".join(f"{labels_ru.get(r['feature'],r['feature']).split(',')[0].lower()} ({num(r['h2_other_mean'],2)})" for r in ranked_other)+". Значимость этих различий приведена в столбцах p Холма.")
-table("Модели LOPO на исходных и нормированных к «Базе» признаках",["Модель","Brier","95 % ДИ Brier","Сбаланс. точность","ROC AUC"],[
- [row["name"],num(row["metrics"]["brier"],3),f"[{num(row['metrics']['brier_ci_low'],3)}; {num(row['metrics']['brier_ci_high'],3)}]",
-  num(row["metrics"]["balanced_accuracy"],3),num(row["metrics"]["roc_auc"],3)] for row in contrast_summary["models"]],[185,50,100,85,75])
-add(f"Признаки: речь (5), видео (4), ЧСС и RMSSD ЭКГ в окне 120 с. Модель, разбиение и метрики совпадают с разделом {ref('Модели классификации')}. Нормированные признаки рассчитываются по ответам исключённого участника без использования меток.","SmallRu")
+ ["H1","Контраст «Ложь − Правда» отличается от нуля",f"Точный двусторонний тест перестановки знаков по участникам; поправка Холма по {estimable('h1_p')} признакам"],
+ ["H2",f"Контраст различается между группами профиля: ведущий естественный тип «Содействующий» ({group_codes}) и остальные ({other_codes})",f"Точный перестановочный тест разности средних групп; минимум {contrast_lib.MIN_GROUP} участника в группе; поправка Холма по {estimable('h2_p')} признакам"],
+ ["H3","Контраст связан с выраженностью профиля",f"Коэффициент Спирмена, точные перестановки рангов; минимум 6 участников; поправка Холма по {estimable('h3_p')} признакам"],
+ ["H4","Профили снижают ошибку модели «видео + речь»","Δ Brier с профилями и без; LOPO; bootstrap по участникам"],
+ ["H5","Нормализация к «Базе» снижает ошибку модели","Δ Brier нормированных и исходных признаков; LOPO; bootstrap по участникам"]]
+table("Проверяемые гипотезы",["№","Гипотеза H1 (альтернатива)","Метод, уровень значимости 0,05"],hypotheses,[28,232,235])
+expected_rows=[[labels_ru.get(f,f),"↑ рост" if d==1 else "↓ снижение",
+                {"vrij":"Когнитивная нагрузка при построении ложного ответа "+cite("vrij"),
+                 "depaulo":"Напряжение голоса "+cite("depaulo"),
+                 "hrv":"Снижение парасимпатической активности при напряжении "+cite("hrv")}.get(src,"Отклонение от индивидуальной нормы")]
+               for f,d,src in ((f,v["direction"],v["source"]) for f,v in contrast_summary["expected"].items())]
+for row,(f,v) in zip(expected_rows,contrast_summary["expected"].items()):
+    if f=="bio_ecg_hr_bpm_context120s":row[2]="Физиологическое возбуждение "+cite("vrij")
+table("Ожидаемое направление изменения признаков при лжи",["Признак","Ожидание","Основание"],expected_rows,[175,80,240])
+add("Ожидаемое направление сопоставляется с наблюдаемым знаком контраста. Проверка H1 остаётся двусторонней для всех признаков.","SmallRu")
 subheading("Модели классификации")
-dataset=multimodal["dataset"]
-model_rows=multimodal["models"]
-model_metrics={row["id"]:row["metrics"] for row in model_rows}
-increment=multimodal["profile_increment"]
-fusion_increment=multimodal["fusion_profile_increment"]
 trial_features=csvrows(OUT/"research/multimodal/trial_features.csv")
 feature_counts={key:sum(num(row.get(key))!="н/д" for row in trial_features) for key in [
     "audio_pitch_median_hz", "video_head_speed_norm_per_s", "video_mouth_motion_ratio_per_s",
@@ -696,14 +691,55 @@ add(f"Проверка LOPO каждый раз исключает из обуч
 add("Речевые признаки: основной тон, его разброс, уровень сигнала, темп и доля пауз. Видеопризнаки: скорость головы, движение торса, раскрытие глаз и движение рта. БиоРадио: ЧСС, RMSSD ЭКГ и частота RIP в 120-секундном контексте ответа.","SmallRu")
 add(f"До заполнения пропусков основной тон доступен для {feature_counts['audio_pitch_median_hz']} ответов, движение головы — для {feature_counts['video_head_speed_norm_per_s']}, рта — для {feature_counts['video_mouth_motion_ratio_per_s']}, ЧСС ЭКГ — для {feature_counts['bio_ecg_hr_bpm_context120s']}, частота RIP — для {feature_counts['bio_rip_rate_bpm_context120s']}.","SmallRu")
 add("Профили включают выраженность, Эмоц+, Эмоц− и отдельные признаки наличия компонентов естественного и демонстрируемого типа. Эмоциональный баланс используется в корреляциях. Имена, ИСУ и тексты вопросов и эталонов в признаки моделей не входят.","SmallRu")
+add(f"Brier {cite('brier')} — средняя квадратичная ошибка вероятности; меньше лучше. Сбалансированная точность — среднее чувствительности и специфичности; ROC AUC — качество ранжирования ответов. Для последних двух метрик случайный уровень равен 0,5. 95 % ДИ рассчитаны bootstrap по участникам ({increment.get('bootstrap',5000)} повторов) при фиксированных прогнозах LOPO, без повторного обучения.","SmallRu")
+add(f"Для H5 та же модель обучается на {len(contrast_lib.CONTRAST_FEATURES)} признаках контрастов (раздел {ref('Метки и нормализация')}) в исходных единицах и в z. Нормированные признаки исключённого участника рассчитываются по его ответам без использования меток.","SmallRu")
+subheading("Корреляционный анализ профилей")
+add(f"Сопоставлены профили и показатели за всю запись. Единица анализа — участник, n = {dataset['participants']}. Заданы {families['primary']} основных сочетаний (выраженность и эмоциональный баланс с 6 признаками) и {families['secondary']} дополнительных. Коэффициент Спирмена, точные двусторонние перестановки рангов, поправка Холма {cite('holm')} отдельно в каждом семействе; 95 % ДИ — парный bootstrap участников {cite('permutation')}. Для ЭКГ, RIP и rPPG требуется не менее 20 % пригодных окон записи; сочетание рассчитывается при не менее 6 пригодных участниках.","SmallRu")
+
+story.append(PageBreak())
+heading("Результаты")
+subheading("Маркеры «Ложь − Правда»")
+arrow={1:"↑",-1:"↓"}
+marker_rows=[[labels_ru.get(row["feature"],row["feature"]),arrow.get(row.get("expected"),"—"),str(row["h1_n"]),
+              f"{int(row['n_expected_direction'])} из {row['h1_n']}" if row.get("expected") else "—",
+              f"{num(row['h1_mean'],2)} [{num(row['h1_ci_low'],2)}; {num(row['h1_ci_high'],2)}]" if row["h1_mean"] is not None else "н/д",
+              holm_p(row.get("h1_p")),holm_p(row.get("h1_p_holm"))] for row in tests]
+table("Контраст «Ложь − Правда» в единицах z по участникам",["Признак","Ожид.","n","В ожидаемую сторону","Среднее [95 % ДИ]","p","p Холма"],marker_rows,[135,45,25,72,103,50,65])
+add("Ожид. — направление по таблице ожиданий (раздел "+ref("Гипотезы и ожидаемые направления")+"); n — число участников с контрастом. Признак не проверяется, если контраст доступен менее чем у 6 участников: основной тон, его разброс и уровень речи требуют окна 5 с внутри ответа.","SmallRu")
+contrast_rows=pd.read_csv(OUT/"research/contrasts/participant_contrasts.csv")
+report_figures.contrast_dots(contrast_rows,tests,labels_ru,set(group["participants"]),FIGURES/"contrasts.png")
+figure(FIGURES/"contrasts.png","Контраст «Ложь − Правда» каждого участника по признакам; ромб — среднее и 95 % bootstrap ДИ",max_height=420,
+       intro="Контрасты отдельных участников показаны на рисунке {n}.")
+best=min((row for row in tests if row.get("h1_p") is not None),key=lambda row:row["h1_p"])
+add(f"Наименьшее p до поправки — {labels_ru.get(best['feature'],best['feature']).split(',')[0].lower()}: среднее {num(best['h1_mean'],2)} z"+
+    (f", изменение в ожидаемую сторону у {int(best['n_expected_direction'])} из {best['h1_n']} участников" if best.get("expected") else "")+
+    f"; p = {num(best['h1_p'],3)}, p Холма = {num(best['h1_p_holm'],3)}.")
+subheading("Маркеры по группам профиля")
+group_rows=[[labels_ru.get(row["feature"],row["feature"]),num(row["h2_group_mean"],2),num(row["h2_other_mean"],2),holm_p(row.get("h2_p_holm")),
+             num(row["h3_rho"],2),holm_p(row.get("h3_p_holm"))] for row in tests]
+table("Контраст «Ложь − Правда» по группам профиля и связь с выраженностью",["Признак","Сод.","Др.","p Холма H2","ρ","p Холма H3"],group_rows,[170,55,55,75,60,80])
+add("Сод. и Др. — средний контраст группы с ведущим естественным типом «Содействующий» и остальных участников; ρ — коэффициент Спирмена контраста и выраженности профиля.","SmallRu")
+ranked=sorted([row for row in tests if row["h2_group_mean"] is not None],key=lambda row:-abs(row["h2_group_mean"]))[:3]
+ranked_other=sorted([row for row in tests if row["h2_other_mean"] is not None],key=lambda row:-abs(row["h2_other_mean"]))[:3]
+if ranked and ranked_other:
+    add("Наибольшие по модулю средние контрасты группы «Содействующий»: "+"; ".join(f"{labels_ru.get(r['feature'],r['feature']).split(',')[0].lower()} ({num(r['h2_group_mean'],2)})" for r in ranked)+". Группы остальных профилей: "+"; ".join(f"{labels_ru.get(r['feature'],r['feature']).split(',')[0].lower()} ({num(r['h2_other_mean'],2)})" for r in ranked_other)+".")
+subheading("Проверка гипотез")
+def verdict(rows,key):
+    hits=significant(rows,key)
+    return "p Холма < 0,05: "+", ".join(labels_ru.get(r["feature"],r["feature"]) for r in hits) if hits else "Нулевая гипотеза не отвергнута ни для одного признака (p Холма ≥ 0,05)"
+table("Результаты проверки гипотез",["№","Результат"],[
+ ["H1",verdict(tests,"h1_p_holm")],["H2",verdict(tests,"h2_p_holm")],["H3",verdict(tests,"h3_p_holm")],
+ ["H4",delta_text(increment)],["H5",delta_text(normalization_delta)]],[40,455])
+subheading("Классификация")
 table("Качество моделей при проверке LOPO",["Модель","Brier","95 % ДИ Brier","Сбаланс. точность","ROC AUC"],[
  [model_name(row["name"]),num(row["metrics"].get("brier"),3),
   f"[{num(row['metrics'].get('brier_ci_low'),3)}; {num(row['metrics'].get('brier_ci_high'),3)}]",
   num(row["metrics"].get("balanced_accuracy"),3),num(row["metrics"].get("roc_auc"),3)]
  for row in model_rows],[185,50,100,85,75])
-add(f"Brier {cite('brier')} — средняя квадратичная ошибка вероятности; меньше лучше. Сбалансированная точность — среднее чувствительности и специфичности; ROC AUC — качество ранжирования ответов. Для последних двух метрик случайный уровень равен 0,5. 95 % ДИ рассчитаны bootstrap по участникам ({increment.get('bootstrap',5000)} повторов) при фиксированных прогнозах LOPO, без повторного обучения.","SmallRu")
 add(f"Среди проверенных наборов наименьшая ошибка у видеопризнаков: Brier {num(model_metrics['video']['brier'],3)} против {num(model_metrics['prior']['brier'],3)} у прогноза по доле классов. Однако ROC AUC = {num(model_metrics['video']['roc_auc'],3)}, а сбалансированная точность = {percent(model_metrics['video']['balanced_accuracy'])}: разделение ответов осталось около случайного уровня.","SmallRu")
-
+table("Модели LOPO на исходных и нормированных к «Базе» признаках",["Модель","Brier","95 % ДИ Brier","Сбаланс. точность","ROC AUC"],[
+ [row["name"],num(row["metrics"]["brier"],3),f"[{num(row['metrics']['brier_ci_low'],3)}; {num(row['metrics']['brier_ci_high'],3)}]",
+  num(row["metrics"]["balanced_accuracy"],3),num(row["metrics"]["roc_auc"],3)] for row in contrast_summary["models"]],[185,50,100,85,75])
 subheading("Вклад профилей и биосигналов")
 fig=OUT/"research/multimodal/model_comparison.png"
 if not fig.exists():raise SystemExit(f"Missing analysis figure: {fig}")
@@ -717,13 +753,9 @@ table("Чувствительность моделей к границам см�
   num(row["metrics"].get("brier"),3),num(row["metrics"].get("roc_auc"),3)]
  for scenario in multimodal["sync_sensitivity"] for row in scenario["models"]],[145,170,90,90])
 add(f"При обоих смещениях ROC AUC остаётся ниже 0,5. Для полного набора каналов добавление профилей даёт Δ Brier = {num(fusion_increment['delta_brier'],6)}, 95 % ДИ [{num(fusion_increment['ci_low'],4)}; {num(fusion_increment['ci_high'],4)}]; улучшение также не установлено.","SmallRu")
-
 subheading("Связи профилей с измерениями")
-families=multimodal["association_families"]
-associations=multimodal["associations"]
 estimated=sum(row.get("rho") is not None for row in associations)
-add(f"Сопоставлены профили и показатели за всю запись. Единица анализа — участник, n = {dataset['participants']}. Заданы {families['primary']} основных сочетаний (выраженность и эмоциональный баланс с 6 признаками) и {families['secondary']} дополнительных. Коэффициент Спирмена, точные двусторонние перестановки рангов, поправка Холма {cite('holm')} отдельно в каждом семействе; 95 % ДИ — парный bootstrap участников {cite('permutation')}.","SmallRu")
-add(f"Рассчитаны {estimated} из {len(associations)} сочетаний; остальные не набрали минимум 6 пригодных участников или вариативных значений. Для ЭКГ, RIP и rPPG требуется не менее 20 % пригодных окон записи. После поправки Холма статистически значимых связей не обнаружено (p < 0,05).","SmallRu")
+add(f"Рассчитаны {estimated} из {len(associations)} сочетаний; остальные не набрали минимум 6 пригодных участников или вариативных значений. После поправки Холма статистически значимых связей не обнаружено (p < 0,05).","SmallRu")
 fig=OUT/"research/multimodal/associations.png"
 if not fig.exists():raise SystemExit(f"Missing analysis figure: {fig}")
 figure(fig,f"Все {families['primary']} основных сочетаний. Одна точка соответствует одному участнику; подписи содержат n, коэффициент Спирмена и p Холма",max_height=540,intro="Все основные сочетания показаны на рисунке {n}.")

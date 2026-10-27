@@ -45,3 +45,11 @@ def test_architecture_columns_connect_left_to_right(tmp_path):
             assert any(c == column + 1 and set(range(f, l + 1)) & rows for c, f, l, *_ in ARCHITECTURE)
     architecture(tmp_path / "architecture.png")
     assert (tmp_path / "architecture.png").exists()
+
+
+def test_contrast_dots_skip_untested_features(tmp_path):
+    from nti_lab.report_figures import contrast_dots
+    contrasts = pd.DataFrame(dict(participant_id=["A", "B", "A"], feature=["x", "x", "y"], contrast=[1., -1., 2.]))
+    tests = [dict(feature="x", h1_mean=0., h1_ci_low=-1., h1_ci_high=1., expected=1), dict(feature="y", h1_mean=None)]
+    contrast_dots(contrasts, tests, {"x": "X"}, {"A"}, tmp_path / "dots.png")
+    assert (tmp_path / "dots.png").exists()

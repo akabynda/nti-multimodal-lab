@@ -164,3 +164,28 @@ def architecture(path: Path):
         ax.set_ylim(-3 * dy - height / 2 - .05, height / 2 + .45)
         ax.axis("off")
         _save(fig, path)
+
+
+def contrast_dots(contrasts: pd.DataFrame, tests: list[dict], labels: dict, group: set, path: Path):
+    """Participant «Ложь − Правда» contrasts per feature with mean and 95% bootstrap CI."""
+    rows = [t for t in tests if t.get("h1_mean") is not None]
+    with plt.rc_context(STYLE):
+        fig, ax = plt.subplots(figsize=(7.6, .42 * len(rows) + 1.1), layout="constrained")
+        for i, test in enumerate(rows):
+            part = contrasts[contrasts.feature.eq(test["feature"])].dropna(subset=["contrast"])
+            jitter = np.linspace(-.12, .12, len(part)) if len(part) > 1 else np.zeros(len(part))
+            colors = [BLUE if pid in group else VIOLET for pid in part.participant_id]
+            ax.scatter(part.contrast, i + jitter, s=14, c=colors, alpha=.8, lw=0, zorder=2)
+            ax.errorbar(test["h1_mean"], i, xerr=[[test["h1_mean"] - test["h1_ci_low"]], [test["h1_ci_high"] - test["h1_mean"]]],
+                        fmt="D", color=INK, markersize=4, capsize=3, lw=1, zorder=3)
+        arrow = {1: " (ожид. ↑)", -1: " (ожид. ↓)"}
+        ax.set_yticks(range(len(rows)), [labels.get(t["feature"], t["feature"]) + arrow.get(t.get("expected"), "") for t in rows])
+        ax.invert_yaxis()
+        ax.axvline(0, color=MUTED, lw=.8)
+        ax.set_xlabel("Контраст «Ложь − Правда», z")
+        ax.grid(axis="x", alpha=.4)
+        handles = [plt.Line2D([], [], marker="o", ls="", color=BLUE, label="ведущий тип «Содействующий»"),
+                   plt.Line2D([], [], marker="o", ls="", color=VIOLET, label="остальные участники"),
+                   plt.Line2D([], [], marker="D", ls="", color=INK, label="среднее и 95 % ДИ")]
+        fig.legend(handles=handles, loc="outside lower center", ncol=3, frameon=False)
+        _save(fig, path)
