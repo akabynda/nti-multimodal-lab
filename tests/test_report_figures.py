@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from nti_lab.palette import decimal_comma
-from nti_lab.report_figures import bland_altman, sync_curves
+from nti_lab.report_figures import ARCHITECTURE, architecture, bland_altman, sync_curves
 
 
 def test_bland_altman_statistics(tmp_path):
@@ -34,3 +34,14 @@ def test_decimal_comma_tick_labels():
     labels = [t.get_text() for t in ax.get_xticklabels()]
     assert any("," in label for label in labels) and not any("." in label for label in labels)
     plt.close(fig)
+
+
+def test_architecture_columns_connect_left_to_right(tmp_path):
+    columns = {column for column, *_ in ARCHITECTURE}
+    assert columns == set(range(5))
+    for column, first, last, *_ in ARCHITECTURE:
+        if column < 4:
+            rows = set(range(first, last + 1))
+            assert any(c == column + 1 and set(range(f, l + 1)) & rows for c, f, l, *_ in ARCHITECTURE)
+    architecture(tmp_path / "architecture.png")
+    assert (tmp_path / "architecture.png").exists()

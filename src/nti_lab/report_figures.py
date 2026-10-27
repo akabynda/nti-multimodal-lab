@@ -121,3 +121,46 @@ def synchronized_signals(*, turns: list[dict], video: dict, bio: dict, lead_s: f
         for ax in axes:
             ax.grid(alpha=.4)
         _save(fig, path)
+
+
+
+ARCHITECTURE = (
+    # (column, first row, last row, title, details); data flows left to right between adjacent columns.
+    (0, 0, 0, "Видео MTS", "одна камера"), (0, 1, 1, "Звук", "дорожка видео"),
+    (0, 2, 2, "БиоРадио BCRX", "ЭКГ, RIP, GSR, ФПГ"), (0, 3, 3, "Истории, анкета", "DOCX, XLSX"),
+    (1, 0, 0, "vision.py", "лицо, rPPG, поза"), (1, 1, 1, "audio.py", "ASR, роли, акустика"),
+    (1, 2, 2, "biosignals.py", "RR, ВСР, ИН, дыхание"), (1, 3, 3, "research.py", "сверка историй"),
+    (2, 0, 3, "alignment.py\nsync.py", "единая шкала\nвремени видео"),
+    (3, 0, 0, "session_summary.py", "этапы, сводки"), (3, 1, 1, "multimodal_\nfeatures.py", "признаки ответов"),
+    (3, 2, 2, "contrasts.py", "«База», гипотезы"), (3, 3, 3, "multimodal_\nanalysis.py", "модели LOPO"),
+    (4, 0, 1, "app.py", "интерфейс\nиз 5 зон"), (4, 2, 3, "build_report.py", "PDF отчёта"),
+)
+
+
+def architecture(path: Path):
+    """Processing scheme: inputs, modality modules, common clock, analysis and outputs."""
+    width, height, dx, dy = 1.62, .7, 2.1, 1.0
+    with plt.rc_context(STYLE):
+        fig, ax = plt.subplots(figsize=(8.3, 4.4), layout="constrained")
+        boxes = []
+        for column, first, last, title, details in ARCHITECTURE:
+            x, top, bottom = column * dx, -first * dy + height / 2, -last * dy - height / 2
+            boxes.append((column, first, last, x))
+            color = MUTED if column == 0 else CYAN_DARK if column == 2 else VIOLET if column == 4 else BLUE
+            ax.add_patch(plt.Rectangle((x - width / 2, bottom), width, top - bottom, facecolor="white",
+                                       edgecolor=color, linewidth=1.2))
+            middle = (top + bottom) / 2
+            ax.text(x, middle + .12, title, ha="center", va="bottom", fontsize=6.8, color=INK, weight="bold", linespacing=1)
+            ax.text(x, middle - .02, details, ha="center", va="top", fontsize=6.2, color=MUTED, linespacing=1.1)
+        for column, first, last, x in boxes:
+            for row in range(first, last + 1):
+                target = next((b for b in boxes if b[0] == column + 1 and b[1] <= row <= b[2]), None)
+                if target:
+                    ax.annotate("", (target[3] - width / 2, -row * dy), (x + width / 2, -row * dy),
+                                arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=.7, shrinkA=0, shrinkB=0))
+        for column, label in enumerate(("Исходные данные", "Обработка", "Синхронизация", "Анализ", "Результаты")):
+            ax.text(column * dx, height / 2 + .18, label, ha="center", fontsize=7.5, color=INK)
+        ax.set_xlim(-width / 2 - .05, 4 * dx + width / 2 + .05)
+        ax.set_ylim(-3 * dy - height / 2 - .05, height / 2 + .45)
+        ax.axis("off")
+        _save(fig, path)
