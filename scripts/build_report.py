@@ -76,7 +76,7 @@ styles.add(ParagraphStyle("TocTitle",parent=styles["Section"],alignment=TA_CENTE
 styles.add(ParagraphStyle("Toc0",fontName="Body",fontSize=10,leading=15,leftIndent=0))
 styles.add(ParagraphStyle("Toc1",fontName="Body",fontSize=9.5,leading=13,leftIndent=18))
 story=[]
-numbers={"table":0,"figure":0,"section":0,"sub":0}
+numbers={"table":0,"figure":0}
 def p(text,style="TextRu"):
     return Paragraph(escape(str(text)).replace("\n","<br/>"),styles[style])
 def add(text,style="TextRu"):
@@ -84,14 +84,19 @@ def add(text,style="TextRu"):
 def contents_entry(text,style,level):
     entry=p(text,style);entry.toc_level=level
     story.append(entry)
+SECTION_NUMBERS={}
+def set_outline(outline):
+    """Number chapters and subsections from the declared outline; titles are unique."""
+    for i,(chapter,subsections) in enumerate(outline,1):
+        SECTION_NUMBERS[chapter]=str(i)
+        for j,title in enumerate(subsections,1):
+            SECTION_NUMBERS[title]=f"{i}.{j}"
+def ref(title):
+    return SECTION_NUMBERS[title]
 def heading(text,numbered=True):
-    if numbered:
-        numbers["section"]+=1;numbers["sub"]=0
-        text=f"{numbers['section']} {text}"
-    contents_entry(text,"Section",0)
+    contents_entry(f"{ref(text)} {text}" if numbered else text,"Section",0)
 def subheading(text):
-    numbers["sub"]+=1
-    contents_entry(f"{numbers['section']}.{numbers['sub']} {text}","Sub",1)
+    contents_entry(f"{ref(text)} {text}","Sub",1)
 def next_figure():
     return numbers["figure"]+1
 REFERENCES={
@@ -228,6 +233,16 @@ gsr_review_count=sum(b.get("gsr_quality",{}).get("status")=="flat_or_out_of_rang
 relation={"consistent":"Согласуется с эталоном","different":"Дополнительные сведения","omitted":"Не рассказано","uncertain":"Неоднозначный ответ","contradiction_candidate":"Несоответствие эталону"}
 counts=Counter(n["relation"] for n in notes)
 asr_validation=read(OUT/"audio/validation_summary.json",{})
+set_outline([
+ ("Материалы и данные",["Исходные материалы","Записи участников","Профили участников","Этапы сессии"]),
+ ("Синхронизация",[]),
+ ("Биосигналы БиоРадио",["ЭКГ, ВСР и дыхание"]+(["Контактный ФПГ и ЭКГ"] if ppg_records else [])),
+ ("Видеоаналитика",["Лицевые области, видеопульс и дыхание","Кинематика тела, головы и конечностей"]),
+ ("Речевой анализ",["Распознавание речи и проверка стенограмм","Речевые и акустические показатели"]),
+ ("Разметка ответов",["Сопоставление с письменным эталоном"]),
+ ("Статистический анализ",["Метки ответов и нормализация","Гипотезы","Контрасты и маркеры по группам профиля",
+                           "Модели классификации","Вклад профилей и биосигналов","Связи профилей с измерениями"]),
+ ("Интерфейс и архитектура",["Интерфейс","Архитектура"])])
 summaries={}
 for a in audios:
     rid,pid=a["recording_id"],a["participant_id"]
@@ -348,8 +363,8 @@ for pid in order:
         add(f"{names[pid]}: ИСУ {by_profile[pid]['tab_number']} в исходной таблице отсутствует.","SmallRu")
 add(f"Источник таблиц {profiles_table} и {emotions_table}: Результаты.xlsx, сопоставление по номеру ИСУ.","SmallRu")
 subheading("Этапы сессии")
-add("Сессия состоит из начального фона с закрытыми глазами (2 мин), диалога и конечного фона. Границы фонов найдены по речевой инструкции интервьюера и раскрытию глаз (раздел 2). Диалог — пары «вопрос – ответ» между концом начального и началом конечного фона.")
-add("Тематический блок задаётся по двум последним предложениям вопроса: первое совпадение с ключевыми основами темы истории (профессия, экзамен, достижения, алкоголь, обман, конфликт, летний день, нерешённая проблема) или нейтральных вопросов (о себе, увлечения, самочувствие). Вопрос без совпадения продолжает текущий блок. Ответы нейтрального блока используются как «База» (раздел 7).")
+add(f"Сессия состоит из начального фона с закрытыми глазами (2 мин), диалога и конечного фона. Границы фонов найдены по речевой инструкции интервьюера и раскрытию глаз (раздел {ref('Синхронизация')}). Диалог — пары «вопрос – ответ» между концом начального и началом конечного фона.")
+add(f"Тематический блок задаётся по двум последним предложениям вопроса: первое совпадение с ключевыми основами темы истории (профессия, экзамен, достижения, алкоголь, обман, конфликт, летний день, нерешённая проблема) или нейтральных вопросов (о себе, увлечения, самочувствие). Вопрос без совпадения продолжает текущий блок. Ответы нейтрального блока используются как «База» (раздел {ref('Метки ответов и нормализация')}).")
 def stage_span(stages,name):
     item=next((b for b in stages["baselines"] if b["name"]==name),None)
     return f"{num(item['start_s'],0)}–{num(item['end_s'],0)}" if item else "н/д"
@@ -536,7 +551,7 @@ tests=contrast_summary["tests"]
 contrast_models={row["id"]:row["metrics"] for row in contrast_summary["models"]}
 normalization_delta=contrast_summary["increments"]["normalized_minus_raw"]
 subheading("Метки ответов и нормализация")
-add("Каждому ответу присвоена одна из трёх меток: «Правда» — ответ согласуется с письменным эталоном; «Ложь» — ответ содержит несоответствие эталону (раздел 6); «База» — ответ на вопрос нейтрального блока (о себе, увлечения, самочувствие; раздел 1.4). Ответ с меткой «Правда» или «Ложь» в «Базу» не входит.")
+add(f"Каждому ответу присвоена одна из трёх меток: «Правда» — ответ согласуется с письменным эталоном; «Ложь» — ответ содержит несоответствие эталону (раздел {ref('Разметка ответов')}); «База» — ответ на вопрос нейтрального блока (о себе, увлечения, самочувствие; раздел {ref('Этапы сессии')}). Ответ с меткой «Правда» или «Ложь» в «Базу» не входит.")
 count_rows=[]
 for i,pid in enumerate(order):
     c=next((row for row in contrast_summary["counts"] if row["participant_id"]==pid),{})
@@ -579,7 +594,7 @@ if ranked and ranked_other:
 table("Модели LOPO на исходных и нормированных к «Базе» признаках",["Модель","Brier","95 % ДИ Brier","Сбаланс. точность","ROC AUC"],[
  [row["name"],num(row["metrics"]["brier"],3),f"[{num(row['metrics']['brier_ci_low'],3)}; {num(row['metrics']['brier_ci_high'],3)}]",
   num(row["metrics"]["balanced_accuracy"],3),num(row["metrics"]["roc_auc"],3)] for row in contrast_summary["models"]],[185,50,100,85,75])
-add("Признаки: речь (5), видео (4), ЧСС и RMSSD ЭКГ в окне 120 с. Модель, разбиение и метрики совпадают с разделом 7.4. Нормированные признаки рассчитываются по ответам исключённого участника без использования меток.","SmallRu")
+add(f"Признаки: речь (5), видео (4), ЧСС и RMSSD ЭКГ в окне 120 с. Модель, разбиение и метрики совпадают с разделом {ref('Модели классификации')}. Нормированные признаки рассчитываются по ответам исключённого участника без использования меток.","SmallRu")
 subheading("Модели классификации")
 dataset=multimodal["dataset"]
 model_rows=multimodal["models"]
@@ -720,7 +735,7 @@ table("Файлы результатов",["Путь в проекте","Сод�
  ["outputs/research/multimodal/model_predictions.csv","Прогнозы LOPO для воспроизведения оценок"],
  ["outputs/research/contrasts/","Ответы с метками «Правда», «Ложь», «База», нормированные признаки, контрасты участников и проверка гипотез"],
  ["outputs/report/figures/","Рисунки синхронизации, согласия rPPG и ЭКГ и синхронных сигналов"],
- ["outputs/report/session_summary.csv","Сводные показатели ВСР, речи и кинематики по записям (таблицы раздела 1.4, 3–5)"],
+ ["outputs/report/session_summary.csv",f"Сводные показатели этапов сессии, ВСР, речи и кинематики по записям (разделы {ref('Этапы сессии')}, {ref('Биосигналы БиоРадио')}–{ref('Речевой анализ')})"],
  ["outputs/audio/","Стенограммы, временные метки, акустические признаки"],
  ["outputs/bio/","ЭКГ, ФПГ, RIP, GSR, интервалы и показатели ВСР"],
  ["outputs/video/","Лицевые области, rPPG и кинематика"],
